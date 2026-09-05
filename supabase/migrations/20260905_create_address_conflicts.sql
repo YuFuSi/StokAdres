@@ -37,9 +37,6 @@ drop policy if exists address_conflicts_public_insert on public.address_conflict
 drop policy if exists address_conflicts_public_update on public.address_conflicts;
 drop policy if exists address_conflicts_public_delete on public.address_conflicts;
 create policy address_conflicts_public_select on public.address_conflicts for select to anon, authenticated using (true);
-create policy address_conflicts_public_insert on public.address_conflicts for insert to anon, authenticated with check (true);
-create policy address_conflicts_public_update on public.address_conflicts for update to anon, authenticated using (true) with check (true);
-create policy address_conflicts_public_delete on public.address_conflicts for delete to anon, authenticated using (true);
 
 create or replace function public.resolve_address_conflict(conflict_id uuid, action text)
 returns public.address_conflicts
