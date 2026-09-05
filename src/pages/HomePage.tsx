@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { ActionCard } from '../components/ActionCard'
 import { addressRecordService, getProductsWithAddressRecords } from '../data/localData'
-import { AppLayout } from '../layouts/AppLayout'
 import {
   DuplicateActiveAddressError,
 } from '../services/addressRecordService'
@@ -27,7 +26,10 @@ export function HomePage() {
   const [query, setQuery] = useState('')
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null)
   const [selectedRecords, setSelectedRecords] = useState<AddressRecord[]>([])
-  const [allAddressRecords, setAllAddressRecords] = useState<AddressRecord[]>(() => addressRecordService.list())
+  const [allAddressRecords, setAllAddressRecords] = useState<AddressRecord[]>([])
+  const [products, setProducts] = useState<Product[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+  const [loadError, setLoadError] = useState('')
   const [editingRecordId, setEditingRecordId] = useState<string | null>(null)
   const [address, setAddress] = useState('')
   const [cartonCount, setCartonCount] = useState('')
@@ -56,7 +58,7 @@ export function HomePage() {
   const importInputRef = useRef<HTMLInputElement>(null)
   const backupInputRef = useRef<HTMLInputElement>(null)
 
-  const availableProducts = getProductsWithAddressRecords(allAddressRecords)
+  const availableProducts = getProductsWithAddressRecords(allAddressRecords, products)
   const searchedProducts = searchProducts(availableProducts, query, allAddressRecords)
   const results = filterAndSortProducts(
     searchedProducts,
@@ -69,14 +71,19 @@ export function HomePage() {
   const totalStockCount = new Set(availableProducts.map((product) => product.stockCode)).size
   const totalCartonCount = activeAddressRecords.reduce((total, record) => total + record.cartonCount, 0)
 
-  const refreshAddressRecords = (stockCode?: string) => {
-    const records = addressRecordService.list()
+  const refreshAddressRecords = async (stockCode?: string) => {
+    const [records, nextProducts] = await Promise.all([addressRecordService.list(), addressRecordService.listProducts()])
     setAllAddressRecords(records)
-    if (stockCode) setSelectedRecords(addressRecordService.getActiveByStockCode(stockCode))
+    setProducts(nextProducts)
+    if (stockCode) {
+      setSelectedRecords(records.filter((record) => record.stockCode === stockCode && record.isActive))
+    }
   }
 
-  const selectProduct = (product: Product) => {
-    const records = addressRecordService.getActiveByStockCode(product.stockCode)
+  const selectProduct = async (product: Product) => {
+    const records = allAddressRecords.filter(
+      (record) => (record.productId === product.id || record.stockCode === product.stockCode) && record.isActive,
+    )
     setSelectedProduct(product)
     setSelectedRecords(records)
     setEditingRecordId(null)
@@ -99,6 +106,22 @@ export function HomePage() {
     setIsFormOpen(false)
     setExportMessage('')
   }
+
+  useEffect(() => {
+    let isMounted = true
+    void Promise.all([addressRecordService.list(), addressRecordService.listProducts()])
+      .then(([records, loadedProducts]) => {
+        if (!isMounted) return
+        setAllAddressRecords(records)
+        setProducts(loadedProducts)
+      })
+      .catch((error: unknown) => {
+        console.error(error)
+        if (isMounted) setLoadError(error instanceof Error ? error.message : 'Veriler yüklenemedi.')
+      })
+      .finally(() => { if (isMounted) setIsLoading(false) })
+    return () => { isMounted = false }
+  }, [])
 
   useEffect(() => {
     setActiveResultIndex(0)
@@ -209,7 +232,7 @@ export function HomePage() {
     setIsFormOpen(true)
   }
 
-  const submitAddress = () => {
+  const submitAddress = async () => {
     if (!selectedProduct) return
 
     const parsedCartonCount = Number(cartonCount)
@@ -220,12 +243,13 @@ export function HomePage() {
 
     try {
       if (editingRecordId) {
-        addressRecordService.update(editingRecordId, {
+        await addressRecordService.update(editingRecordId, {
             address: address.trim(),
             cartonCount: parsedCartonCount,
           })
       } else {
-        addressRecordService.create({
+        await addressRecordService.create({
+          productId: selectedProduct.id,
             stockCode: selectedProduct.stockCode,
             stockName: selectedProduct.stockName,
             address: address.trim(),
@@ -233,7 +257,7 @@ export function HomePage() {
           })
       }
 
-      refreshAddressRecords(selectedProduct.stockCode)
+      await refreshAddressRecords(selectedProduct.stockCode)
       setAddress('')
       setCartonCount('')
       setFormError('')
@@ -248,14 +272,19 @@ export function HomePage() {
     }
   }
 
-  const deleteAddress = (recordId: string) => {
+  const deleteAddress = async (recordId: string) => {
     if (!selectedProduct) return
-    addressRecordService.delete(recordId)
-    refreshAddressRecords(selectedProduct.stockCode)
-    setFormError('')
-    if (editingRecordId === recordId) {
-      setEditingRecordId(null)
-      setIsFormOpen(false)
+    try {
+      await addressRecordService.delete(recordId)
+      await refreshAddressRecords(selectedProduct.stockCode)
+      setFormError('')
+      if (editingRecordId === recordId) {
+        setEditingRecordId(null)
+        setIsFormOpen(false)
+      }
+    } catch (error) {
+      console.error(error)
+      setFormError('Adres kaydı silinemedi. Lütfen tekrar deneyin.')
     }
   }
 
@@ -263,9 +292,10 @@ export function HomePage() {
     setExportMessage('')
     try {
       const date = new Date().toISOString().slice(0, 10)
+      const [records, loadedProducts] = await Promise.all([addressRecordService.list(), addressRecordService.listProducts()])
       const didExport = await exportAddressRecordsCsv(
-        activeAddressRecords,
-        availableProducts,
+        records,
+        loadedProducts,
         `stokadres-export-${date}.csv`,
       )
       if (didExport) setExportMessage('Veriler başarıyla dışa aktarıldı.')
@@ -278,7 +308,7 @@ export function HomePage() {
     setBackupMessage('')
     try {
       const date = new Date().toISOString().slice(0, 10)
-      if (await saveBackupJson(addressRecordService.list(), `stokadres-backup-${date}.json`)) {
+      if (await saveBackupJson(await addressRecordService.list(), `stokadres-backup-${date}.json`)) {
         setBackupMessage('Veriler başarıyla yedeklendi.')
       }
     } catch {
@@ -299,31 +329,37 @@ export function HomePage() {
     }
   }
 
-  const confirmRestore = () => {
+  const confirmRestore = async () => {
     if (!restoreBackup || isRestoring) return
 
     setIsRestoring(true)
     try {
-      addressRecordService.replaceAll(restoreBackup.records)
-      refreshAddressRecords()
+      await addressRecordService.replaceAll(restoreBackup.records)
+      await refreshAddressRecords()
       setSelectedProduct(null)
       setSelectedRecords([])
       setRestoreBackup(null)
       setBackupMessage('Yedek başarıyla geri yüklendi.')
-    } catch {
+    } catch (error) {
+      console.error(error)
       setRestoreError('Yedek geri yüklenemedi. Mevcut veriler korunuyor.')
     } finally {
       setIsRestoring(false)
     }
   }
 
-  const clearAllData = () => {
-    addressRecordService.clear()
-    refreshAddressRecords()
-    setSelectedProduct(null)
-    setSelectedRecords([])
-    setIsResetConfirmOpen(false)
-    setBackupMessage('Tüm veriler silindi.')
+  const clearAllData = async () => {
+    try {
+      await addressRecordService.clear()
+      await refreshAddressRecords()
+      setSelectedProduct(null)
+      setSelectedRecords([])
+      setIsResetConfirmOpen(false)
+      setBackupMessage('Tüm veriler silindi.')
+    } catch (error) {
+      console.error(error)
+      setBackupMessage('Veriler silinemedi. Lütfen tekrar deneyin.')
+    }
   }
 
   const openImportPicker = () => {
@@ -350,7 +386,7 @@ export function HomePage() {
     setIsImporting(true)
     try {
       const rows = await parseImportFile(file)
-      setImportPreview(createImportPreview(rows, addressRecordService.list()))
+      setImportPreview(createImportPreview(rows, await addressRecordService.list(), products))
     } catch (error) {
       setImportError(error instanceof ImportFileError
         ? error.message
@@ -360,30 +396,30 @@ export function HomePage() {
     }
   }
 
-  const applyImport = () => {
+  const applyImport = async () => {
     if (!importPreview || isApplyingImport) return
 
     setIsApplyingImport(true)
     try {
-      const result = importNewRecords(importPreview, addressRecordService)
-      refreshAddressRecords()
+      const result = await importNewRecords(importPreview, addressRecordService)
+      await refreshAddressRecords()
       setImportPreview(null)
       setImportResult(result)
+    } catch (error) {
+      console.error(error)
+      setImportError('İçe aktarma sırasında Supabase bağlantısı başarısız oldu.')
     } finally {
       setIsApplyingImport(false)
     }
   }
 
   return (
-    <AppLayout>
+    <div className="workspace-page">
       <header className="topbar">
-        <div className="brand" aria-label="StokAdres ana sayfa">
-          <span className="brand__mark">SA</span>
-          <span className="brand__name">StokAdres</span>
-        </div>
+        <span className="workspace-context">Stok operasyonları</span>
         <div className="topbar__actions">
           <button className="settings-trigger" type="button" onClick={() => setIsSettingsOpen((open) => !open)} aria-expanded={isSettingsOpen}>Ayarlar</button>
-          <span className="topbar__status"><span className="status-dot" /> Yerel çalışma alanı</span>
+          <span className="topbar__status"><span className="status-dot" /> Supabase çalışma alanı</span>
         </div>
       </header>
 
@@ -407,6 +443,7 @@ export function HomePage() {
           {importError && <p className="import-error" role="alert">{importError}</p>}
           {copyMessage && <p className={copyMessage === 'Kopyalandı' ? 'copy-message' : 'import-error'} role="status">{copyMessage}</p>}
           {backupMessage && <p className="export-message" role="status">{backupMessage}</p>}
+          {loadError && <p className="import-error" role="alert">{loadError}</p>}
         </section>
 
         {isSettingsOpen && (
@@ -520,7 +557,8 @@ export function HomePage() {
             </div>
           )}
 
-          <div className="workspace-grid">
+          {isLoading && <p className="empty-state" role="status">Veriler yükleniyor...</p>}
+          <div className="workspace-grid" aria-busy={isLoading}>
             <div className="results-panel">
               <div className="panel-caption"><span>Ürünler</span><span>{results.length} sonuç</span></div>
               <div className="product-results">
@@ -652,6 +690,7 @@ export function HomePage() {
               <div className="import-result" aria-label="İçe aktarma sonucu">
                 <p>{importResult.totalRows} satır işlendi</p>
                 <p>{importResult.addedRecords} yeni kayıt eklendi</p>
+                <p>{importResult.conflictRecords} çakışma Çakışmalar Merkezi'ne gönderildi</p>
                 <p>{importResult.duplicateRecords} duplicate atlandı</p>
                 <p>{importResult.invalidRecords} hatalı satır atlandı</p>
                 {importResult.failedRecords > 0 && <p>{importResult.failedRecords} kayıt oluşturulamadı</p>}
@@ -678,7 +717,7 @@ export function HomePage() {
                       <td>{row.stockName}</td>
                       <td>{row.address}</td>
                       <td>{row.cartonCount ?? '-'}</td>
-                      <td><span className={`import-status import-status--${row.status}`}>{row.status === 'new' ? 'Yeni' : row.status === 'duplicate' ? 'Duplicate' : 'Hatalı'}</span></td>
+                      <td><span className={`import-status import-status--${row.status}`}>{row.status === 'new' ? 'Yeni' : row.status === 'duplicate' ? (row.existingRecord ? 'Çakışma' : 'Duplicate') : 'Hatalı'}</span></td>
                       <td>{row.errors.join(' ') || '-'}</td>
                     </tr>
                   ))}
@@ -732,6 +771,6 @@ export function HomePage() {
           </section>
         </div>
       )}
-    </AppLayout>
+    </div>
   )
 }

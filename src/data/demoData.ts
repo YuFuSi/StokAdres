@@ -10,6 +10,7 @@ export const demoProducts: Product[] = [
 export const demoAddressRecords: AddressRecord[] = [
   {
     id: 'address-record-1',
+    productId: 'product-1',
     stockCode: 'ZÜCC33687',
     stockName: 'PEROTTİ 16976',
     address: 'I37-2',
@@ -20,6 +21,7 @@ export const demoAddressRecords: AddressRecord[] = [
   },
   {
     id: 'address-record-1b',
+    productId: 'product-1',
     stockCode: 'ZÜCC33687',
     stockName: 'PEROTTİ 16976',
     address: 'J12-4',
@@ -30,6 +32,7 @@ export const demoAddressRecords: AddressRecord[] = [
   },
   {
     id: 'address-record-2',
+    productId: 'product-2',
     stockCode: 'ZÜCC22528',
     stockName: 'PEROTTİ 18015',
     address: 'I37-3',
@@ -40,6 +43,7 @@ export const demoAddressRecords: AddressRecord[] = [
   },
   {
     id: 'address-record-3',
+    productId: 'product-3',
     stockCode: 'ZÜCC41707',
     stockName: 'PEROTTİ 16801',
     address: 'I37-3',

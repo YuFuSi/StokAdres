@@ -37,13 +37,14 @@ type WindowWithFilePicker = Window & {
 }
 
 export function createAddressRecordsCsv(records: AddressRecord[], products: Product[] = []): string {
+  const productsById = new Map(products.map((product) => [product.id, product]))
   const barcodesByStockCode = new Map(products.map((product) => [product.stockCode, product.barcode ?? '']))
   const rows = records
     .filter((record) => record.isActive)
     .map((record) => [
       record.stockCode,
       record.stockName,
-      barcodesByStockCode.get(record.stockCode) ?? '',
+      productsById.get(record.productId)?.barcode ?? barcodesByStockCode.get(record.stockCode) ?? '',
       record.address,
       String(record.cartonCount),
       'Aktif',

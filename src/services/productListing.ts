@@ -8,16 +8,23 @@ export type SortDirection = 'asc' | 'desc'
 export type ProductMetrics = {
   addressCount: number
   cartonCount: number
+  activeAddressCount: number
+  totalCartons: number
+  hasMultipleAddresses: boolean
 }
 
 export function getProductMetrics(product: Product, addressRecords: AddressRecord[]): ProductMetrics {
   const activeRecords = addressRecords.filter(
-    (record) => record.isActive && record.stockCode === product.stockCode,
+    (record) => record.isActive && (record.productId === product.id || record.stockCode === product.stockCode),
   )
+  const totalCartons = activeRecords.reduce((total, record) => total + record.cartonCount, 0)
 
   return {
     addressCount: activeRecords.length,
-    cartonCount: activeRecords.reduce((total, record) => total + record.cartonCount, 0),
+    cartonCount: totalCartons,
+    activeAddressCount: activeRecords.length,
+    totalCartons,
+    hasMultipleAddresses: activeRecords.length > 1,
   }
 }
 

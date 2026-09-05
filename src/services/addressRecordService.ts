@@ -3,7 +3,26 @@ import type {
   CreateAddressRecordInput,
   UpdateAddressRecordInput,
 } from '../types/addressRecord'
-import { ADDRESS_RECORDS_STORAGE_KEY, getLocalStorage } from '../data/localStorage'
+import type { Product } from '../types/product'
+import { supabase } from '../lib/supabase'
+import { createProduct, getProductByStockCode, listProducts, updateProduct } from './productService'
+import { createOperationId } from './auditLogService'
+
+type ProductRelation = {
+  stock_code: string
+  stock_name: string
+}
+
+type AddressRecordRow = {
+  id: string
+  product_id: string
+  address: string
+  carton_count: number
+  is_active: boolean
+  created_at: string
+  updated_at: string
+  products: ProductRelation | ProductRelation[]
+}
 
 export class DuplicateActiveAddressError extends Error {
   constructor(stockCode: string, address: string) {
@@ -20,150 +39,141 @@ export class AddressRecordNotFoundError extends Error {
 }
 
 export class AddressRecordService {
-  private readonly records = new Map<string, AddressRecord>()
-  private readonly storage: Storage | undefined
+  async create(input: CreateAddressRecordInput): Promise<AddressRecord> {
+    const product = input.productId
+      ? { id: input.productId }
+      : await this.findOrCreateProduct(input)
+    const { data, error } = await supabase
+      .from('address_records')
+      .insert({ product_id: product.id, address: input.address, carton_count: input.cartonCount, is_active: input.isActive ?? true })
+      .select('id, product_id, address, carton_count, is_active, created_at, updated_at, products!inner(stock_code, stock_name)')
+      .single()
 
-  constructor(initialRecords: AddressRecord[] = [], storage: Storage | undefined = getLocalStorage()) {
-    this.storage = storage
-    const storedRecords = this.readStoredRecords()
-    const recordsToLoad = storedRecords ?? initialRecords
-
-    recordsToLoad.forEach((record) => this.records.set(record.id, { ...record }))
-
-    if (storedRecords === undefined) this.persist()
+    if (error) throw this.mapSupabaseError(error, input.stockCode, input.address)
+    return this.mapRecord(data as unknown as AddressRecordRow)
   }
 
-  create(input: CreateAddressRecordInput): AddressRecord {
-    this.assertNoActiveAddress(input.stockCode, input.address)
-
-    const now = new Date().toISOString()
-    const record: AddressRecord = {
-      ...input,
-      id: this.createId(),
-      isActive: true,
-      createdAt: now,
-      updatedAt: now,
-    }
-
-    this.records.set(record.id, record)
-    this.persist()
-    return { ...record }
+  async getById(id: string): Promise<AddressRecord | undefined> {
+    const { data, error } = await supabase
+      .from('address_records')
+      .select('id, product_id, address, carton_count, is_active, created_at, updated_at, products!inner(stock_code, stock_name)')
+      .eq('id', id)
+      .maybeSingle()
+    if (error) throw error
+    return data ? this.mapRecord(data as unknown as AddressRecordRow) : undefined
   }
 
-  getById(id: string): AddressRecord | undefined {
-    const record = this.records.get(id)
-    return record ? { ...record } : undefined
+  async getActiveByStockCode(stockCode: string): Promise<AddressRecord[]> {
+    const records = await this.list()
+    return records.filter((record) => record.stockCode === stockCode && record.isActive)
   }
 
-  getActiveByStockCode(stockCode: string): AddressRecord[] {
-    return [...this.records.values()]
-      .filter((record) => record.stockCode === stockCode && record.isActive)
-      .map((record) => ({ ...record }))
+  async getByProductId(productId: string): Promise<AddressRecord[]> {
+    const records = await this.list()
+    return records.filter((record) => record.productId === productId)
   }
 
-  getByStockCode(stockCode: string): AddressRecord | undefined {
-    return this.getActiveByStockCode(stockCode)[0]
+  async getByStockCode(stockCode: string): Promise<AddressRecord | undefined> {
+    return (await this.getActiveByStockCode(stockCode))[0]
   }
 
-  update(id: string, input: UpdateAddressRecordInput): AddressRecord {
-    const existing = this.records.get(id)
+  async update(id: string, input: UpdateAddressRecordInput): Promise<AddressRecord> {
+    const existing = await this.getById(id)
     if (!existing) throw new AddressRecordNotFoundError(id)
-
-    const nextRecord = { ...existing, ...input }
-    if (nextRecord.isActive) this.assertNoActiveAddress(nextRecord.stockCode, nextRecord.address, id)
-
-    const updatedRecord: AddressRecord = {
-      ...nextRecord,
-      updatedAt: new Date().toISOString(),
+    const next = { ...existing, ...input }
+    const product = input.productId || input.stockCode || input.stockName
+      ? { id: input.productId ?? (await this.findOrCreateProduct({ stockCode: next.stockCode, stockName: next.stockName, barcode: next.barcode, address: next.address, cartonCount: next.cartonCount })).id }
+      : undefined
+    const updates = {
+      ...(product ? { product_id: product.id } : {}),
+      ...(input.address !== undefined ? { address: input.address } : {}),
+      ...(input.cartonCount !== undefined ? { carton_count: input.cartonCount } : {}),
+      ...(input.isActive !== undefined ? { is_active: input.isActive } : {}),
     }
-    this.records.set(id, updatedRecord)
-    this.persist()
-    return { ...updatedRecord }
+    const { data, error } = await supabase
+      .from('address_records')
+      .update(updates)
+      .eq('id', id)
+      .select('id, product_id, address, carton_count, is_active, created_at, updated_at, products!inner(stock_code, stock_name)')
+      .single()
+    if (error) throw this.mapSupabaseError(error, next.stockCode, next.address)
+    return this.mapRecord(data as unknown as AddressRecordRow)
   }
 
-  delete(id: string): boolean {
-    const deleted = this.records.delete(id)
-    if (deleted) this.persist()
-    return deleted
+  async delete(id: string): Promise<boolean> {
+    const { error, count } = await supabase.from('address_records').delete({ count: 'exact' }).eq('id', id)
+    if (error) throw error
+    return Boolean(count)
   }
 
-  replaceAll(records: AddressRecord[]): void {
-    this.records.clear()
-    records.forEach((record) => this.records.set(record.id, { ...record }))
-    this.persist()
+  async replaceAll(records: AddressRecord[]): Promise<void> {
+    const { error } = await supabase.rpc('restore_address_records', {
+      p_records: records,
+      p_operation_id: createOperationId(),
+    })
+    if (error) throw error
   }
 
-  clear(): void {
-    this.records.clear()
-    this.persist()
+  async clear(): Promise<void> {
+    const { error } = await supabase.rpc('clear_address_records', { p_operation_id: createOperationId() })
+    if (error) throw error
   }
 
-  list(): AddressRecord[] {
-    return [...this.records.values()].map((record) => ({ ...record }))
+  async list(): Promise<AddressRecord[]> {
+    const { data, error } = await supabase
+      .from('address_records')
+      .select('id, product_id, address, carton_count, is_active, created_at, updated_at, products!inner(stock_code, stock_name)')
+      .order('created_at', { ascending: true })
+    if (error) throw error
+    return (data ?? []).map((record) => this.mapRecord(record as unknown as AddressRecordRow))
   }
 
-  private assertNoActiveAddress(stockCode: string, address: string, ignoredId?: string): void {
-    const hasActiveRecord = [...this.records.values()].some(
-      (record) => record.id !== ignoredId
-        && record.stockCode === stockCode
-        && record.address === address
-        && record.isActive,
-    )
-
-    if (hasActiveRecord) throw new DuplicateActiveAddressError(stockCode, address)
+  async listProducts(): Promise<Product[]> {
+    return listProducts()
   }
 
-  private createId(): string {
-    return `address-record-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-  }
-
-  private readStoredRecords(): AddressRecord[] | undefined {
-    if (!this.storage) return undefined
-
+  private async findOrCreateProduct(input: CreateAddressRecordInput): Promise<{ id: string }> {
+    const existing = await getProductByStockCode(input.stockCode)
+    if (existing) {
+      if (input.barcode && !existing.barcode) {
+        await updateProduct(existing.id, { barcode: input.barcode })
+      }
+      return { id: existing.id }
+    }
     try {
-      const storedValue = this.storage.getItem(ADDRESS_RECORDS_STORAGE_KEY)
-      if (storedValue === null) return undefined
-
-      const parsedValue: unknown = JSON.parse(storedValue)
-      return this.isAddressRecordArray(parsedValue) ? parsedValue : undefined
-    } catch {
-      return undefined
+      const created = await createProduct({ stockCode: input.stockCode, stockName: input.stockName, barcode: input.barcode })
+      return { id: created.id }
+    } catch (error) {
+      if (isUniqueViolation(error)) {
+        const product = await getProductByStockCode(input.stockCode)
+        if (product) return { id: product.id }
+      }
+      throw error
     }
   }
 
-  private persist(): void {
-    if (!this.storage) return
-
-    try {
-      this.storage.setItem(ADDRESS_RECORDS_STORAGE_KEY, JSON.stringify(this.list()))
-    } catch {
-      // Storage errors should not prevent the in-memory workflow from working.
+  private mapRecord(record: AddressRecordRow): AddressRecord {
+    const product = Array.isArray(record.products) ? record.products[0] : record.products
+    if (!product) throw new Error('Adres kaydı ilişkili ürün bilgisi olmadan döndü.')
+    return {
+      id: record.id,
+      productId: record.product_id,
+      stockCode: product.stock_code,
+      stockName: product.stock_name,
+      address: record.address,
+      cartonCount: record.carton_count,
+      isActive: record.is_active,
+      createdAt: record.created_at,
+      updatedAt: record.updated_at,
     }
   }
 
-  private isAddressRecordArray(value: unknown): value is AddressRecord[] {
-    if (!Array.isArray(value) || !value.every((record) => this.isAddressRecord(record))) return false
-
-    const activeAddressKeys = value
-      .filter((record) => record.isActive)
-      .map((record) => `${record.stockCode}\u0000${record.address}`)
-
-    return new Set(activeAddressKeys).size === activeAddressKeys.length
+  private mapSupabaseError(error: { code?: string; message: string }, stockCode: string, address: string): Error {
+    if (error.code === '23505' || error.message.toLowerCase().includes('unique')) return new DuplicateActiveAddressError(stockCode, address)
+    return new Error(error.message)
   }
+}
 
-  private isAddressRecord(value: unknown): value is AddressRecord {
-    if (!value || typeof value !== 'object') return false
-
-    const record = value as Record<string, unknown>
-    return typeof record.id === 'string'
-      && typeof record.stockCode === 'string'
-      && typeof record.stockName === 'string'
-      && typeof record.address === 'string'
-      && typeof record.cartonCount === 'number'
-      && Number.isInteger(record.cartonCount)
-      && record.cartonCount >= 0
-      && typeof record.isActive === 'boolean'
-      && typeof record.createdAt === 'string'
-      && typeof record.updatedAt === 'string'
-  }
+function isUniqueViolation(error: unknown): boolean {
+  return Boolean(error && typeof error === 'object' && 'code' in error && error.code === '23505')
 }

@@ -1,5 +1,6 @@
 export type AddressRecord = {
   id: string
+  productId: string
   stockCode: string
   stockName: string
   address: string
@@ -10,10 +11,13 @@ export type AddressRecord = {
 }
 
 export type CreateAddressRecordInput = {
+  productId?: string
   stockCode: string
   stockName: string
+  barcode?: string
   address: string
   cartonCount: number
+  isActive?: boolean
 }
 
 export type UpdateAddressRecordInput = Partial<CreateAddressRecordInput> & {

@@ -2,6 +2,7 @@ import * as XLSX from 'xlsx'
 import type { ImportRow } from './importTypes'
 
 const REQUIRED_COLUMNS = ['Stok Kodu', 'Stok İsmi', 'Adres', 'Koli Adedi'] as const
+const BARCODE_COLUMN = 'Barkod'
 
 type RawCell = string | number | boolean | Date | null | undefined
 type RawRow = RawCell[]
@@ -36,7 +37,7 @@ export async function parseImportFile(file: File): Promise<ImportRow[]> {
     .filter((row): row is ImportRow => row !== null)
 }
 
-function getHeaderIndexes(headerRow: RawRow): Record<typeof REQUIRED_COLUMNS[number], number> {
+function getHeaderIndexes(headerRow: RawRow): Record<typeof REQUIRED_COLUMNS[number], number> & { Barkod?: number } {
   const normalizedHeaders = new Map(
     headerRow.map((cell, index) => [normalizeText(cell), index]),
   )
@@ -51,18 +52,20 @@ function getHeaderIndexes(headerRow: RawRow): Record<typeof REQUIRED_COLUMNS[num
     'Stok İsmi': normalizedHeaders.get(normalizeText('Stok İsmi'))!,
     'Adres': normalizedHeaders.get(normalizeText('Adres'))!,
     'Koli Adedi': normalizedHeaders.get(normalizeText('Koli Adedi'))!,
+    Barkod: normalizedHeaders.get(normalizeText(BARCODE_COLUMN)),
   }
 }
 
 function toImportRow(
   row: RawRow,
   rowNumber: number,
-  headerIndexes: Record<typeof REQUIRED_COLUMNS[number], number>,
+  headerIndexes: Record<typeof REQUIRED_COLUMNS[number], number> & { Barkod?: number },
 ): ImportRow | null {
   const stockCode = normalizeText(row[headerIndexes['Stok Kodu']])
   const stockName = normalizeText(row[headerIndexes['Stok İsmi']])
   const address = normalizeText(row[headerIndexes.Adres])
   const cartonValue = row[headerIndexes['Koli Adedi']]
+  const barcode = headerIndexes.Barkod === undefined ? undefined : normalizeText(row[headerIndexes.Barkod])
 
   if (!stockCode && !stockName && !address && isBlank(cartonValue)) return null
 
@@ -70,6 +73,7 @@ function toImportRow(
     rowNumber,
     stockCode,
     stockName,
+    ...(barcode ? { barcode } : {}),
     address,
     cartonCount: parseCartonCount(cartonValue),
   }
