@@ -82,29 +82,25 @@ export async function create(input: CreateConflictInput): Promise<AddressConflic
   const existingPending = (pendingRows ?? []).find((row) => normalizeAddress((row as ConflictRow).incoming_address) === normalizeAddress(incoming.address))
   if (existingPending) return mapConflict(existingPending as unknown as ConflictRow)
 
-  const { data, error } = await supabase
-    .from('address_conflicts')
-    .insert({
-      conflict_type: 'address-duplicate',
-      status: 'pending',
-      product_id: existing.productId,
-      stock_code: existing.stockCode,
-      stock_name: existing.stockName,
-      address: existing.address,
-      existing_record_id: existing.id,
-      existing_carton_count: existing.cartonCount,
-      existing_is_active: existing.isActive,
-      existing_created_at: existing.createdAt,
-      existing_updated_at: existing.updatedAt,
-      incoming_stock_code: incoming.stockCode,
-      incoming_stock_name: incoming.stockName,
-      incoming_barcode: incoming.barcode ?? null,
-      incoming_address: incoming.address.trim(),
-      incoming_carton_count: incoming.cartonCount,
-      incoming_source: incoming.source ?? null,
-    })
-    .select('*')
-    .single()
+  const { data, error } = await supabase.rpc('create_address_conflict', {
+    p_conflict_type: 'address-duplicate',
+    p_product_id: existing.productId,
+    p_stock_code: existing.stockCode,
+    p_stock_name: existing.stockName,
+    p_address: existing.address,
+    p_existing_record_id: existing.id,
+    p_existing_stock_code: existing.stockCode,
+    p_existing_stock_name: existing.stockName,
+    p_existing_address: existing.address,
+    p_existing_carton_count: existing.cartonCount,
+    p_existing_is_active: existing.isActive,
+    p_incoming_stock_code: incoming.stockCode,
+    p_incoming_stock_name: incoming.stockName,
+    p_incoming_barcode: incoming.barcode ?? null,
+    p_incoming_address: incoming.address.trim(),
+    p_incoming_carton_count: incoming.cartonCount,
+    p_source: incoming.source ?? null,
+  })
   if (error) throw error
   return mapConflict(data as unknown as ConflictRow)
 }
