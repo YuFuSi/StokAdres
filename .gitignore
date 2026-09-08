@@ -4,3 +4,6 @@ out/
 .env
 .env.local
 *.log
+dist-electron/
+release/
+supabase/.temp/
