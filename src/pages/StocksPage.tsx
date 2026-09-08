@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { addressRecordService, getProductsWithAddressRecords } from '../data/localData'
 import { filterAndSortProducts, getProductMetrics, type ProductFilter, type ProductSort } from '../services/productListing'
-import { listProducts } from '../services/productService'
+import { createProduct, DuplicateProductBarcodeError, DuplicateProductStockCodeError, listProducts } from '../services/productService'
 import type { Product } from '../types/product'
 import './StocksPage.css'
 
@@ -18,15 +18,26 @@ export function StocksPage({ onBackToDashboard, onProductSelect }: StocksPagePro
   const [sort, setSort] = useState<ProductSort>('relevance')
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState('')
+  const [isCreateFormOpen, setIsCreateFormOpen] = useState(false)
+  const [stockCode, setStockCode] = useState('')
+  const [stockName, setStockName] = useState('')
+  const [barcodes, setBarcodes] = useState<string[]>([])
+  const [barcodeInput, setBarcodeInput] = useState('')
+  const [formError, setFormError] = useState('')
+  const [isCreating, setIsCreating] = useState(false)
+
+  const loadStocks = async () => {
+    const [nextProducts, nextRecords] = await Promise.all([listProducts(), addressRecordService.list()])
+    setProducts(nextProducts)
+    setRecords(nextRecords)
+  }
 
   useEffect(() => {
     let isMounted = true
     setIsLoading(true)
-    Promise.all([listProducts(), addressRecordService.list()])
-      .then(([nextProducts, nextRecords]) => {
+    loadStocks()
+      .then(() => {
         if (!isMounted) return
-        setProducts(nextProducts)
-        setRecords(nextRecords)
       })
       .catch((reason: unknown) => {
         console.error(reason)
@@ -36,10 +47,74 @@ export function StocksPage({ onBackToDashboard, onProductSelect }: StocksPagePro
     return () => { isMounted = false }
   }, [])
 
+  const openCreateForm = () => {
+    setStockCode('')
+    setStockName('')
+    setBarcodes([])
+    setBarcodeInput('')
+    setFormError('')
+    setIsCreateFormOpen(true)
+  }
+
+  const closeCreateForm = () => {
+    if (isCreating) return
+    setIsCreateFormOpen(false)
+    setFormError('')
+  }
+
+  const addBarcodeInput = () => {
+    const nextBarcode = barcodeInput.trim()
+    if (!nextBarcode) return
+    if (barcodes.includes(nextBarcode)) {
+      setFormError('Aynı barkod birden fazla kez eklenemez.')
+      return
+    }
+    setBarcodes((current) => [...current, nextBarcode])
+    setBarcodeInput('')
+    setFormError('')
+  }
+
+  const removeBarcodeInput = (barcode: string) => {
+    setBarcodes((current) => current.filter((item) => item !== barcode))
+  }
+
+  const saveProduct = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const trimmedStockCode = stockCode.trim()
+    const trimmedStockName = stockName.trim()
+    if (!trimmedStockCode || !trimmedStockName) {
+      setFormError('Stok kodu ve stok adı zorunludur.')
+      return
+    }
+    const pendingBarcode = barcodeInput.trim()
+    if (pendingBarcode && barcodes.includes(pendingBarcode)) {
+      setFormError('Aynı barkod birden fazla kez eklenemez.')
+      return
+    }
+    const nextBarcodes = pendingBarcode ? [...barcodes, pendingBarcode] : barcodes
+    setIsCreating(true)
+    setFormError('')
+    try {
+      const product = await createProduct({ stockCode: trimmedStockCode, stockName: trimmedStockName, barcodes: nextBarcodes })
+      await loadStocks()
+      setIsCreateFormOpen(false)
+      onProductSelect(product.id)
+    } catch (reason: unknown) {
+      console.error(reason)
+      setFormError(reason instanceof DuplicateProductStockCodeError
+        ? 'Bu stok kodu zaten kayıtlı. Farklı bir stok kodu girin.'
+        : reason instanceof DuplicateProductBarcodeError
+          ? 'Bu barkod zaten kayıtlı. Farklı bir barkod girin.'
+          : 'Stok oluşturulamadı. Lütfen bilgileri kontrol edip tekrar deneyin.')
+    } finally {
+      setIsCreating(false)
+    }
+  }
+
   const productsWithRecords = getProductsWithAddressRecords(records, products)
   const normalizedQuery = query.trim().toLocaleLowerCase('tr-TR')
   const searchedProducts = normalizedQuery
-    ? productsWithRecords.filter((product) => [product.stockCode, product.stockName, product.barcode ?? '']
+    ? productsWithRecords.filter((product) => [product.stockCode, product.stockName, ...product.barcodes]
       .some((value) => value.toLocaleLowerCase('tr-TR').includes(normalizedQuery)))
     : productsWithRecords
   const visibleProducts = filterAndSortProducts(
@@ -63,7 +138,10 @@ export function StocksPage({ onBackToDashboard, onProductSelect }: StocksPagePro
           <h1>Stoklar</h1>
           <p className="stocks-page__description">Sistemdeki stokların genel görünümü</p>
         </div>
-        <button className="button button--secondary" type="button" onClick={onBackToDashboard}>Dashboard'a dön</button>
+        <div className="stocks-page__header-actions">
+          <button className="button button--primary" type="button" onClick={openCreateForm}>+ Stok Ekle</button>
+          <button className="button button--secondary" type="button" onClick={onBackToDashboard}>Dashboard'a dön</button>
+        </div>
       </header>
 
       <section className="stocks-toolbar" aria-label="Stok filtreleri">
@@ -93,7 +171,7 @@ export function StocksPage({ onBackToDashboard, onProductSelect }: StocksPagePro
         <div className="stocks-layout stocks-layout--list-only">
           <section className="stocks-table-panel" aria-label="Stok listesi">
             <div className="stocks-table-caption"><span>{visibleProducts.length} stok</span><span>Ürün bazında görünüm</span></div>
-            {productsWithRecords.length === 0 ? <p className="stocks-state">Henüz stok bulunmuyor.</p> : visibleProducts.length === 0 ? <p className="stocks-state">Aramanızla eşleşen stok bulunamadı.</p> : (
+            {productsWithRecords.length === 0 ? <div className="stocks-state"><p>Henüz stok bulunmuyor.</p><button className="button button--primary" type="button" onClick={openCreateForm}>+ Stok Ekle</button></div> : visibleProducts.length === 0 ? <p className="stocks-state">Aramanızla eşleşen stok bulunamadı.</p> : (
               <div className="stocks-table-wrap">
                 <table className="stocks-table">
                   <thead><tr><th>Stok kodu</th><th>Stok adı</th><th>Barkod</th><th>Adres</th><th>Koli</th><th>Durum</th></tr></thead>
@@ -102,7 +180,7 @@ export function StocksPage({ onBackToDashboard, onProductSelect }: StocksPagePro
                     return <tr className="stocks-row" key={product.id} onClick={() => onProductSelect(product.id)}>
                       <td><strong>{product.stockCode}</strong></td>
                       <td>{product.stockName}</td>
-                      <td>{product.barcode || '-'}</td>
+                      <td>{product.barcodes.length > 0 ? product.barcodes.join(' • ') : '-'}</td>
                       <td>{metrics.activeAddressCount}</td>
                       <td>{metrics.totalCartons}</td>
                       <td><span className="stock-status">{product.isActive === false ? 'Pasif' : 'Aktif'}</span></td>
@@ -114,6 +192,25 @@ export function StocksPage({ onBackToDashboard, onProductSelect }: StocksPagePro
           </section>
         </div>
       )}
+      {isCreateFormOpen && <div className="stocks-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) closeCreateForm() }}>
+        <section className="stocks-modal" role="dialog" aria-modal="true" aria-labelledby="create-stock-title">
+          <div className="stocks-modal__header">
+            <div><p className="intro__eyebrow">YENİ ÜRÜN</p><h2 id="create-stock-title">Stok Ekle</h2></div>
+            <button className="modal-close" type="button" onClick={closeCreateForm} aria-label="Stok ekleme formunu kapat">×</button>
+          </div>
+          <form className="stocks-create-form" onSubmit={saveProduct}>
+            <label>Stok Kodu *<input value={stockCode} onChange={(event) => setStockCode(event.target.value)} placeholder="Örn. STK-001" autoFocus /></label>
+            <label>Stok Adı *<input value={stockName} onChange={(event) => setStockName(event.target.value)} placeholder="Örn. Plastik Kutu" /></label>
+            <div className="stocks-barcode-field">
+              <span>Barkodlar</span>
+              <div className="stocks-barcode-input"><input value={barcodeInput} onChange={(event) => setBarcodeInput(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); addBarcodeInput() } }} placeholder="İlk barkodu girin" /><button className="button button--secondary" type="button" onClick={addBarcodeInput}>Ekle</button></div>
+              {barcodes.length > 0 && <ul className="stocks-barcode-list">{barcodes.map((barcode) => <li key={barcode}><span>{barcode}</span><button type="button" onClick={() => removeBarcodeInput(barcode)} aria-label={`${barcode} barkodunu kaldır`}>Kaldır</button></li>)}</ul>}
+            </div>
+            {formError && <p className="form-error" role="alert">{formError}</p>}
+            <div className="record-actions"><button className="button button--primary" type="submit" disabled={isCreating}>{isCreating ? 'Oluşturuluyor...' : 'Stok Oluştur'}</button><button className="button button--secondary" type="button" onClick={closeCreateForm} disabled={isCreating}>Vazgeç</button></div>
+          </form>
+        </section>
+      </div>}
     </main>
   )
 }

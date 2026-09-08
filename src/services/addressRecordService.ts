@@ -5,7 +5,7 @@ import type {
 } from '../types/addressRecord'
 import type { Product } from '../types/product'
 import { supabase } from '../lib/supabase'
-import { createProduct, getProductByStockCode, listProducts, updateProduct } from './productService'
+import { createProduct, getProductByStockCode, listProducts } from './productService'
 import { createOperationId } from './auditLogService'
 
 type ProductRelation = {
@@ -73,6 +73,11 @@ export class AddressRecordService {
     return records.filter((record) => record.productId === productId)
   }
 
+  async getActiveByProductId(productId: string): Promise<AddressRecord[]> {
+    const records = await this.getByProductId(productId)
+    return records.filter((record) => record.isActive)
+  }
+
   async getByStockCode(stockCode: string): Promise<AddressRecord | undefined> {
     return (await this.getActiveByStockCode(stockCode))[0]
   }
@@ -82,7 +87,7 @@ export class AddressRecordService {
     if (!existing) throw new AddressRecordNotFoundError(id)
     const next = { ...existing, ...input }
     const product = input.productId || input.stockCode || input.stockName
-      ? { id: input.productId ?? (await this.findOrCreateProduct({ stockCode: next.stockCode, stockName: next.stockName, barcode: next.barcode, address: next.address, cartonCount: next.cartonCount })).id }
+      ? { id: input.productId ?? (await this.findOrCreateProduct({ stockCode: next.stockCode, stockName: next.stockName, address: next.address, cartonCount: next.cartonCount })).id }
       : undefined
     const updates = {
       ...(product ? { product_id: product.id } : {}),
@@ -135,13 +140,10 @@ export class AddressRecordService {
   private async findOrCreateProduct(input: CreateAddressRecordInput): Promise<{ id: string }> {
     const existing = await getProductByStockCode(input.stockCode)
     if (existing) {
-      if (input.barcode && !existing.barcode) {
-        await updateProduct(existing.id, { barcode: input.barcode })
-      }
       return { id: existing.id }
     }
     try {
-      const created = await createProduct({ stockCode: input.stockCode, stockName: input.stockName, barcode: input.barcode })
+      const created = await createProduct({ stockCode: input.stockCode, stockName: input.stockName })
       return { id: created.id }
     } catch (error) {
       if (isUniqueViolation(error)) {

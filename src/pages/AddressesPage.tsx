@@ -8,15 +8,16 @@ import './AddressesPage.css'
 
 type AddressesPageProps = {
   onBackToDashboard: () => void
+  initialSelectedRecordId?: string | null
 }
 
 type AddressFilter = 'all' | 'active' | 'inactive'
 type AddressSort = 'address' | 'stock-code' | 'stock-name' | 'carton' | 'updated-at'
 
-export function AddressesPage({ onBackToDashboard }: AddressesPageProps) {
+export function AddressesPage({ onBackToDashboard, initialSelectedRecordId = null }: AddressesPageProps) {
   const [products, setProducts] = useState<Product[]>([])
   const [records, setRecords] = useState<AddressRecord[]>([])
-  const [selectedRecordId, setSelectedRecordId] = useState<string | null>(null)
+  const [selectedRecordId, setSelectedRecordId] = useState<string | null>(initialSelectedRecordId)
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState<AddressFilter>('all')
   const [sort, setSort] = useState<AddressSort>('updated-at')
@@ -46,6 +47,7 @@ export function AddressesPage({ onBackToDashboard }: AddressesPageProps) {
         if (!isMounted) return
         setProducts(nextProducts)
         setRecords(nextRecords)
+        setSelectedRecordId(initialSelectedRecordId)
       })
       .catch((reason: unknown) => {
         console.error(reason)
@@ -62,7 +64,7 @@ export function AddressesPage({ onBackToDashboard }: AddressesPageProps) {
     .filter((record) => {
       if (!normalizedQuery) return true
       const product = productsById.get(record.productId)
-      return [record.address, record.stockCode, record.stockName, product?.barcode ?? '']
+      return [record.address, record.stockCode, record.stockName, ...(product?.barcodes ?? [])]
         .some((value) => value.toLocaleLowerCase('tr-TR').includes(normalizedQuery))
     })
     .sort((left, right) => compareRecords(left, right, sort))
@@ -124,7 +126,6 @@ export function AddressesPage({ onBackToDashboard }: AddressesPageProps) {
           productId: product.id,
           stockCode: product.stockCode,
           stockName: product.stockName,
-          barcode: product.barcode,
           address: address.trim(),
           cartonCount: parsedCartonCount,
           isActive,

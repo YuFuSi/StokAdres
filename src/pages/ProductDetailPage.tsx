@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { addressRecordService } from '../data/localData'
 import { DuplicateActiveAddressError } from '../services/addressRecordService'
-import { getProductById, updateProduct } from '../services/productService'
+import { addProductBarcodes, DuplicateProductBarcodeError, getProductById, removeProductBarcodes, updateProduct } from '../services/productService'
 import { getProductMetrics } from '../services/productListing'
 import type { AddressRecord } from '../types/addressRecord'
 import type { Product } from '../types/product'
@@ -10,9 +10,10 @@ import './ProductDetailPage.css'
 type ProductDetailPageProps = {
   productId: string
   onBack: () => void
+  onAddressSelect: (recordId: string) => void
 }
 
-export function ProductDetailPage({ productId, onBack }: ProductDetailPageProps) {
+export function ProductDetailPage({ productId, onBack, onAddressSelect }: ProductDetailPageProps) {
   const [product, setProduct] = useState<Product | null>(null)
   const [records, setRecords] = useState<AddressRecord[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -22,7 +23,6 @@ export function ProductDetailPage({ productId, onBack }: ProductDetailPageProps)
   const [isSaving, setIsSaving] = useState(false)
   const [stockCode, setStockCode] = useState('')
   const [stockName, setStockName] = useState('')
-  const [barcode, setBarcode] = useState('')
   const [isAddressFormOpen, setIsAddressFormOpen] = useState(false)
   const [editingRecordId, setEditingRecordId] = useState<string | null>(null)
   const [address, setAddress] = useState('')
@@ -30,11 +30,14 @@ export function ProductDetailPage({ productId, onBack }: ProductDetailPageProps)
   const [isActive, setIsActive] = useState(true)
   const [addressError, setAddressError] = useState('')
   const [isAddressSaving, setIsAddressSaving] = useState(false)
+  const [barcode, setBarcode] = useState('')
+  const [barcodeError, setBarcodeError] = useState('')
+  const [isBarcodeSaving, setIsBarcodeSaving] = useState(false)
 
   const loadProduct = async () => {
     const [nextProduct, nextRecords] = await Promise.all([
       getProductById(productId),
-      addressRecordService.list(),
+      addressRecordService.getActiveByProductId(productId),
     ])
     if (!nextProduct) {
       setProduct(null)
@@ -44,14 +47,13 @@ export function ProductDetailPage({ productId, onBack }: ProductDetailPageProps)
     setProduct(nextProduct)
     setStockCode(nextProduct.stockCode)
     setStockName(nextProduct.stockName)
-    setBarcode(nextProduct.barcode ?? '')
-    setRecords(nextRecords.filter((record) => record.productId === nextProduct.id || record.stockCode === nextProduct.stockCode))
+    setRecords(nextRecords)
   }
 
   useEffect(() => {
     let isMounted = true
     setIsLoading(true)
-    Promise.all([getProductById(productId), addressRecordService.list()])
+    Promise.all([getProductById(productId), addressRecordService.getActiveByProductId(productId)])
       .then(([nextProduct, nextRecords]) => {
         if (!isMounted) return
         if (!nextProduct) {
@@ -62,8 +64,7 @@ export function ProductDetailPage({ productId, onBack }: ProductDetailPageProps)
         setProduct(nextProduct)
         setStockCode(nextProduct.stockCode)
         setStockName(nextProduct.stockName)
-        setBarcode(nextProduct.barcode ?? '')
-        setRecords(nextRecords.filter((record) => record.productId === nextProduct.id || record.stockCode === nextProduct.stockCode))
+        setRecords(nextRecords)
       })
       .catch((reason: unknown) => {
         console.error(reason)
@@ -86,7 +87,7 @@ export function ProductDetailPage({ productId, onBack }: ProductDetailPageProps)
   const metrics = product ? getProductMetrics(product, records) : null
   const activeRecords = records.filter((record) => record.isActive)
   const hasProductChanges = product !== null && (
-    stockCode !== product.stockCode || stockName !== product.stockName || barcode !== (product.barcode ?? '')
+    stockCode !== product.stockCode || stockName !== product.stockName
   )
 
   const saveProduct = async () => {
@@ -102,12 +103,10 @@ export function ProductDetailPage({ productId, onBack }: ProductDetailPageProps)
       const updated = await updateProduct(product.id, {
         ...(stockCode !== product.stockCode ? { stockCode: stockCode.trim() } : {}),
         ...(stockName !== product.stockName ? { stockName: stockName.trim() } : {}),
-        ...(barcode !== (product.barcode ?? '') ? { barcode: barcode.trim() } : {}),
       })
       setProduct(updated)
       setStockCode(updated.stockCode)
       setStockName(updated.stockName)
-      setBarcode(updated.barcode ?? '')
       setFeedback('Ürün bilgileri güncellendi.')
       await loadProduct()
     } catch (reason: unknown) {
@@ -115,6 +114,41 @@ export function ProductDetailPage({ productId, onBack }: ProductDetailPageProps)
       setSaveError('Ürün bilgileri güncellenemedi. Lütfen tekrar deneyin.')
     } finally {
       setIsSaving(false)
+    }
+  }
+
+  const addBarcode = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!product || !barcode.trim()) {
+      setBarcodeError('Bir barkod girin.')
+      return
+    }
+    setIsBarcodeSaving(true)
+    setBarcodeError('')
+    try {
+      const updated = await addProductBarcodes(product.id, [barcode])
+      setProduct(updated)
+      setBarcode('')
+      setFeedback('Barkod eklendi.')
+    } catch (reason: unknown) {
+      console.error(reason)
+      setBarcodeError(reason instanceof DuplicateProductBarcodeError
+        ? 'Bu barkod başka bir üründe kayıtlı.'
+        : 'Barkod eklenemedi. Lütfen tekrar deneyin.')
+    } finally {
+      setIsBarcodeSaving(false)
+    }
+  }
+
+  const deleteBarcode = async (value: string) => {
+    if (!product || !window.confirm('Bu barkod silinsin mi?')) return
+    setBarcodeError('')
+    try {
+      setProduct(await removeProductBarcodes(product.id, [value]))
+      setFeedback('Barkod silindi.')
+    } catch (reason: unknown) {
+      console.error(reason)
+      setBarcodeError('Barkod silinemedi. Lütfen tekrar deneyin.')
     }
   }
 
@@ -160,7 +194,6 @@ export function ProductDetailPage({ productId, onBack }: ProductDetailPageProps)
           productId: product.id,
           stockCode: product.stockCode,
           stockName: product.stockName,
-          barcode: product.barcode,
           address: address.trim(),
           cartonCount: parsedCartonCount,
           isActive,
@@ -213,7 +246,7 @@ export function ProductDetailPage({ productId, onBack }: ProductDetailPageProps)
           <div className="product-info-form">
             <label>Stok Kodu<input value={stockCode} onChange={(event) => { setStockCode(event.target.value); setFeedback('') }} /></label>
             <label>Stok Adı<input value={stockName} onChange={(event) => { setStockName(event.target.value); setFeedback('') }} /></label>
-            <label>Barkod<input value={barcode} onChange={(event) => { setBarcode(event.target.value); setFeedback('') }} placeholder="Barkod yok" /></label>
+            <div className="product-barcode-block"><span className="field-label">Barkodlar</span>{product.barcodes.length === 0 ? <p className="product-detail-empty product-detail-empty--compact">Barkod bulunamadı.</p> : <ul className="product-barcode-list">{product.barcodes.map((value) => <li key={value}><span>{value}</span><button type="button" onClick={() => deleteBarcode(value)} aria-label={`${value} barkodunu sil`}>Sil</button></li>)}</ul>}<form className="product-barcode-form" onSubmit={addBarcode}><input value={barcode} onChange={(event) => setBarcode(event.target.value)} placeholder="Yeni barkod" aria-label="Yeni barkod" /><button className="button button--secondary" type="submit" disabled={isBarcodeSaving}>{isBarcodeSaving ? 'Ekleniyor...' : 'Barkod Ekle'}</button></form>{barcodeError && <p className="form-error" role="alert">{barcodeError}</p>}</div>
             <div className="product-readonly-dates"><span>Oluşturulma<strong>{formatDate(product.createdAt)}</strong></span><span>Güncellenme<strong>{formatDate(product.updatedAt)}</strong></span></div>
             {saveError && <p className="form-error" role="alert">{saveError}</p>}
             <button className="button button--primary" type="button" onClick={saveProduct} disabled={!hasProductChanges || isSaving}>{isSaving ? 'Kaydediliyor...' : 'Değişiklikleri Kaydet'}</button>
@@ -222,8 +255,8 @@ export function ProductDetailPage({ productId, onBack }: ProductDetailPageProps)
 
         <section className="product-addresses-panel" aria-labelledby="product-addresses-title">
           <div className="product-detail-section-heading"><div><span className="selected-product__label">Konum kayıtları</span><h2 id="product-addresses-title">Adresler</h2></div><button className="button button--primary" type="button" onClick={openNewAddressForm}>+ Adres Ekle</button></div>
-          {records.length === 0 && <p className="product-detail-empty">Bu stoğa ait aktif adres bulunmuyor.</p>}
-          {records.length > 0 && <div className="product-address-list">{records.map((record) => <div className="product-address-row" key={record.id}><div><small>Adres</small><strong>{record.address}</strong></div><div><small>Koli</small><strong>{record.cartonCount}</strong></div><div><small>Durum</small><span className={record.isActive ? 'address-status address-status--active' : 'address-status address-status--inactive'}>{record.isActive ? 'Aktif' : 'Pasif'}</span></div><div><small>Güncellenme</small><strong>{formatDate(record.updatedAt)}</strong></div><div className="product-address-actions"><button type="button" onClick={() => openEditAddressForm(record)}>Düzenle</button><button type="button" onClick={() => deleteAddress(record)}>Sil</button></div></div>)}</div>}
+          {records.length === 0 && <p className="product-detail-empty">Adres bulunamadı.</p>}
+          {records.length > 0 && <div className="product-address-list">{records.map((record) => <div className="product-address-row" key={record.id} role="button" tabIndex={0} onClick={() => onAddressSelect(record.id)} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') onAddressSelect(record.id) }}><div><small>Adres</small><strong>{record.address}</strong></div><div><small>Koli</small><strong>{record.cartonCount}</strong></div><div><small>Durum</small><span className="address-status address-status--active">Aktif</span></div><div><small>Güncellenme</small><strong>{formatDate(record.updatedAt)}</strong></div><div className="product-address-actions"><button type="button" onClick={(event) => { event.stopPropagation(); openEditAddressForm(record) }}>Düzenle</button><button type="button" onClick={(event) => { event.stopPropagation(); deleteAddress(record) }}>Sil</button></div></div>)}</div>}
           {isAddressFormOpen && <AddressForm address={address} setAddress={setAddress} cartonCount={cartonCount} setCartonCount={setCartonCount} isActive={isActive} setIsActive={setIsActive} isEditing={Boolean(editingRecordId)} isSaving={isAddressSaving} error={addressError} onSubmit={saveAddress} onCancel={closeAddressForm} />}
         </section>
       </div>

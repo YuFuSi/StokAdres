@@ -11,18 +11,20 @@ import { useState } from 'react'
 export function App() {
   const [activePage, setActivePage] = useState<AppPage>('dashboard')
   const [selectedProductId, setSelectedProductId] = useState<string | null>(null)
+  const [selectedAddressId, setSelectedAddressId] = useState<string | null>(null)
 
   const navigate = (page: AppPage) => {
     setSelectedProductId(null)
+    setSelectedAddressId(null)
     setActivePage(page)
   }
 
   return (
     <AppLayout activePage={activePage} onNavigate={navigate}>
       {activePage === 'dashboard' && <DashboardPage />}
-      {activePage === 'stocks' && selectedProductId && <ProductDetailPage productId={selectedProductId} onBack={() => setSelectedProductId(null)} />}
+      {activePage === 'stocks' && selectedProductId && <ProductDetailPage productId={selectedProductId} onBack={() => setSelectedProductId(null)} onAddressSelect={(recordId) => { setSelectedProductId(null); setSelectedAddressId(recordId); setActivePage('addresses') }} />}
       {activePage === 'stocks' && !selectedProductId && <StocksPage onBackToDashboard={() => navigate('dashboard')} onProductSelect={setSelectedProductId} />}
-      {activePage === 'addresses' && <AddressesPage onBackToDashboard={() => setActivePage('dashboard')} />}
+      {activePage === 'addresses' && <AddressesPage onBackToDashboard={() => setActivePage('dashboard')} initialSelectedRecordId={selectedAddressId} />}
       {activePage === 'conflicts' && <ConflictsPage />}
       {activePage === 'audit' && <AuditLogsPage />}
       {activePage !== 'dashboard' && activePage !== 'stocks' && activePage !== 'addresses' && activePage !== 'conflicts' && activePage !== 'audit' && <HomePage />}
