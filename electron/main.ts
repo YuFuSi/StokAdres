@@ -16,7 +16,11 @@ const createWindow = (): void => {
     }
   })
 
-  window.loadFile(path.join(__dirname, '../dist/index.html'))
+  if (process.argv.includes('--dev')) {
+    window.loadURL('http://localhost:5173')
+  } else {
+    window.loadFile(path.join(__dirname, '../dist/index.html'))
+  }
 }
 
 app.whenReady().then(() => {

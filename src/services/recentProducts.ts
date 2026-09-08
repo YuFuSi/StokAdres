@@ -5,7 +5,7 @@ export const RECENT_SEARCHES_STORAGE_KEY = 'stokadres-recent-searches-v1'
 export const RECENT_VIEWED_STORAGE_KEY = 'stokadres-recent-viewed-v1'
 const MAX_RECENT_PRODUCTS = 8
 
-type RecentProduct = Pick<Product, 'id' | 'stockCode' | 'stockName' | 'barcode'>
+type RecentProduct = Pick<Product, 'id' | 'stockCode' | 'stockName' | 'barcodes'>
 
 export function loadRecentSearches(): Product[] {
   return loadRecentProducts(RECENT_SEARCHES_STORAGE_KEY)
@@ -41,7 +41,7 @@ function recordRecentProduct(key: string, product: Product): Product[] {
     id: product.id,
     stockCode: product.stockCode,
     stockName: product.stockName,
-    ...(product.barcode ? { barcode: product.barcode } : {}),
+    barcodes: product.barcodes,
   }
   const next = [snapshot, ...loadRecentProducts(key).filter((item) => item.id !== product.id)]
     .slice(0, MAX_RECENT_PRODUCTS)
@@ -61,5 +61,5 @@ function isRecentProduct(value: unknown): value is Product {
   return typeof item.id === 'string'
     && typeof item.stockCode === 'string'
     && typeof item.stockName === 'string'
-    && (item.barcode === undefined || typeof item.barcode === 'string')
+    && Array.isArray(item.barcodes) && item.barcodes.every((barcode) => typeof barcode === 'string')
 }

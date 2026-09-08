@@ -11,8 +11,9 @@ export function getProductsWithAddressRecords(records: AddressRecord[], products
 		if (!productsByStockCode.has(record.stockCode)) {
 			productsByStockCode.set(record.stockCode, {
 				id: record.productId || `local-${record.stockCode}`,
-				stockCode: record.stockCode,
-				stockName: record.stockName,
+			stockCode: record.stockCode,
+			stockName: record.stockName,
+			barcodes: [],
 			})
 		}
 	})

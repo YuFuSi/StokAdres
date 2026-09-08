@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react'
+import { ArrowLeft, Copy, MapPin, Plus, Trash2 } from 'lucide-react'
 import { addressRecordService } from '../data/localData'
 import { DuplicateActiveAddressError } from '../services/addressRecordService'
 import { addProductBarcodes, DuplicateProductBarcodeError, getProductById, removeProductBarcodes, updateProduct } from '../services/productService'
 import { getProductMetrics } from '../services/productListing'
+import { copyToClipboard } from '../services/clipboard'
 import type { AddressRecord } from '../types/addressRecord'
 import type { Product } from '../types/product'
 import './ProductDetailPage.css'
@@ -152,6 +154,10 @@ export function ProductDetailPage({ productId, onBack, onAddressSelect }: Produc
     }
   }
 
+  const copyBarcode = async (value: string) => {
+    try { await copyToClipboard(value); setFeedback('Barkod panoya kopyalandı.') } catch { setBarcodeError('Barkod panoya kopyalanamadı.') }
+  }
+
   const openNewAddressForm = () => {
     setEditingRecordId(null)
     setAddress('')
@@ -228,25 +234,26 @@ export function ProductDetailPage({ productId, onBack, onAddressSelect }: Produc
 
   return (
     <main className="product-detail-page">
-      <button className="back-link" type="button" onClick={onBack}>← Stoklara Dön</button>
+      <button className="back-link" type="button" onClick={onBack}><ArrowLeft size={15}/> Stoklar</button>
       <header className="product-detail-header">
-        <div><p className="intro__eyebrow">STOK DETAYI</p><h1>{product.stockName}</h1><p className="product-detail-header__code">{product.stockCode}</p></div>
-        <span className="address-status address-status--active">Aktif ürün</span>
+        <div><p className="intro__eyebrow">STOK KODU</p><p className="product-detail-header__code">{product.stockCode}</p><h1>{product.stockName}</h1></div>
+        <span className={product.isActive === false ? 'address-status address-status--inactive' : 'address-status address-status--active'}>{product.isActive === false ? 'Pasif' : 'Aktif'}</span>
       </header>
 
       <section className="product-detail-metrics" aria-label="Ürün özet metrikleri">
-        <div><span>Adres sayısı</span><strong>{metrics?.activeAddressCount ?? 0}</strong></div>
+        <div><span>Stok kodu</span><strong>{product.stockCode}</strong></div>
+        <div><span>Durum</span><strong>{product.isActive === false ? 'Pasif' : 'Aktif'}</strong></div>
+        <div><span>Adres</span><strong>{metrics?.activeAddressCount ?? 0}</strong></div>
         <div><span>Toplam koli</span><strong>{metrics?.totalCartons ?? 0}</strong></div>
-        <div><span>Ürün durumu</span><strong>{product.isActive === false ? 'Pasif' : 'Aktif'}</strong></div>
       </section>
 
       <div className="product-detail-grid">
         <section className="product-info-panel" aria-labelledby="product-info-title">
-          <div className="product-detail-section-heading"><div><span className="selected-product__label">Ürün bilgileri</span><h2 id="product-info-title">Product</h2></div><span className="product-detail-save-state">{feedback}</span></div>
+          <div className="product-detail-section-heading"><div><span className="selected-product__label">Ürün bilgileri</span><h2 id="product-info-title">Stok kartı</h2></div><span className="product-detail-save-state">{feedback}</span></div>
           <div className="product-info-form">
             <label>Stok Kodu<input value={stockCode} onChange={(event) => { setStockCode(event.target.value); setFeedback('') }} /></label>
             <label>Stok Adı<input value={stockName} onChange={(event) => { setStockName(event.target.value); setFeedback('') }} /></label>
-            <div className="product-barcode-block"><span className="field-label">Barkodlar</span>{product.barcodes.length === 0 ? <p className="product-detail-empty product-detail-empty--compact">Barkod bulunamadı.</p> : <ul className="product-barcode-list">{product.barcodes.map((value) => <li key={value}><span>{value}</span><button type="button" onClick={() => deleteBarcode(value)} aria-label={`${value} barkodunu sil`}>Sil</button></li>)}</ul>}<form className="product-barcode-form" onSubmit={addBarcode}><input value={barcode} onChange={(event) => setBarcode(event.target.value)} placeholder="Yeni barkod" aria-label="Yeni barkod" /><button className="button button--secondary" type="submit" disabled={isBarcodeSaving}>{isBarcodeSaving ? 'Ekleniyor...' : 'Barkod Ekle'}</button></form>{barcodeError && <p className="form-error" role="alert">{barcodeError}</p>}</div>
+            <div className="product-barcode-block"><span className="field-label">Barkodlar</span>{product.barcodes.length === 0 ? <p className="product-detail-empty product-detail-empty--compact">Barkod bulunamadı.</p> : <ul className="product-barcode-list">{product.barcodes.map((value) => <li key={value}><code>{value}</code><span><button type="button" onClick={() => void copyBarcode(value)} aria-label={`${value} barkodunu kopyala`}><Copy size={13}/> Kopyala</button><button type="button" onClick={() => deleteBarcode(value)} aria-label={`${value} barkodunu sil`}><Trash2 size={13}/> Sil</button></span></li>)}</ul>}<form className="product-barcode-form" onSubmit={addBarcode}><input value={barcode} onChange={(event) => setBarcode(event.target.value)} placeholder="Yeni barkod" aria-label="Yeni barkod" /><button className="button button--secondary" type="submit" disabled={isBarcodeSaving}><Plus size={14}/>{isBarcodeSaving ? 'Ekleniyor...' : 'Barkod Ekle'}</button></form>{barcodeError && <p className="form-error" role="alert">{barcodeError}</p>}</div>
             <div className="product-readonly-dates"><span>Oluşturulma<strong>{formatDate(product.createdAt)}</strong></span><span>Güncellenme<strong>{formatDate(product.updatedAt)}</strong></span></div>
             {saveError && <p className="form-error" role="alert">{saveError}</p>}
             <button className="button button--primary" type="button" onClick={saveProduct} disabled={!hasProductChanges || isSaving}>{isSaving ? 'Kaydediliyor...' : 'Değişiklikleri Kaydet'}</button>
@@ -254,9 +261,9 @@ export function ProductDetailPage({ productId, onBack, onAddressSelect }: Produc
         </section>
 
         <section className="product-addresses-panel" aria-labelledby="product-addresses-title">
-          <div className="product-detail-section-heading"><div><span className="selected-product__label">Konum kayıtları</span><h2 id="product-addresses-title">Adresler</h2></div><button className="button button--primary" type="button" onClick={openNewAddressForm}>+ Adres Ekle</button></div>
+          <div className="product-detail-section-heading"><div><span className="selected-product__label">Konum kayıtları</span><h2 id="product-addresses-title">Depo Konumları</h2></div><button className="button button--primary" type="button" onClick={openNewAddressForm}><Plus size={15}/> Adres Ekle</button></div>
           {records.length === 0 && <p className="product-detail-empty">Adres bulunamadı.</p>}
-          {records.length > 0 && <div className="product-address-list">{records.map((record) => <div className="product-address-row" key={record.id} role="button" tabIndex={0} onClick={() => onAddressSelect(record.id)} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') onAddressSelect(record.id) }}><div><small>Adres</small><strong>{record.address}</strong></div><div><small>Koli</small><strong>{record.cartonCount}</strong></div><div><small>Durum</small><span className="address-status address-status--active">Aktif</span></div><div><small>Güncellenme</small><strong>{formatDate(record.updatedAt)}</strong></div><div className="product-address-actions"><button type="button" onClick={(event) => { event.stopPropagation(); openEditAddressForm(record) }}>Düzenle</button><button type="button" onClick={(event) => { event.stopPropagation(); deleteAddress(record) }}>Sil</button></div></div>)}</div>}
+          {records.length > 0 && <div className="product-address-list">{records.map((record) => <div className="product-address-row" key={record.id} role="button" tabIndex={0} onClick={() => onAddressSelect(record.id)} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') onAddressSelect(record.id) }}><div><small>Adres</small><strong><MapPin size={14}/>{record.address}</strong></div><div><small>Koli</small><strong>{record.cartonCount} koli</strong></div><div><small>Durum</small><span className="address-status address-status--active">Aktif</span></div><div><small>Güncellendi</small><strong>{formatDate(record.updatedAt)}</strong></div><div className="product-address-actions"><button type="button" onClick={(event) => { event.stopPropagation(); openEditAddressForm(record) }}>Düzenle</button><button type="button" onClick={(event) => { event.stopPropagation(); deleteAddress(record) }}>Sil</button></div></div>)}</div>}
           {isAddressFormOpen && <AddressForm address={address} setAddress={setAddress} cartonCount={cartonCount} setCartonCount={setCartonCount} isActive={isActive} setIsActive={setIsActive} isEditing={Boolean(editingRecordId)} isSaving={isAddressSaving} error={addressError} onSubmit={saveAddress} onCancel={closeAddressForm} />}
         </section>
       </div>

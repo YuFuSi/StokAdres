@@ -19,7 +19,12 @@ const createWindow = () => {
             nodeIntegration: false
         }
     });
-    window.loadFile(node_path_1.default.join(__dirname, '../dist/index.html'));
+    if (process.argv.includes('--dev')) {
+        window.loadURL('http://localhost:5173');
+    }
+    else {
+        window.loadFile(node_path_1.default.join(__dirname, '../dist/index.html'));
+    }
 };
 electron_1.app.whenReady().then(() => {
     electron_1.ipcMain.handle('save-csv', async (_event, payload) => {

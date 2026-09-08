@@ -2,7 +2,7 @@ export type Product = {
   id: string
   stockCode: string
   stockName: string
-  barcode?: string
+  barcodes: string[]
   isActive?: boolean
   createdAt?: string
   updatedAt?: string
@@ -11,7 +11,7 @@ export type Product = {
 export type CreateProductInput = {
   stockCode: string
   stockName: string
-  barcode?: string
+  barcodes?: string[]
 }
 
 export type UpdateProductInput = Partial<CreateProductInput> & {

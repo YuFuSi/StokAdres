@@ -30,7 +30,7 @@ function getMatchScore(
 ): number | null {
   const stockCode = normalize(product.stockCode)
   const stockName = normalize(product.stockName)
-  const barcode = product.barcode ? normalize(product.barcode) : ''
+  const barcode = product.barcodes.map(normalize).join(' ')
   const addresses = addressRecords
     .filter((record) => record.isActive && normalize(record.stockCode) === stockCode)
     .map((record) => normalize(record.address))

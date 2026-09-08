@@ -6,6 +6,7 @@ import { AddressesPage } from './pages/AddressesPage'
 import { ProductDetailPage } from './pages/ProductDetailPage'
 import { ConflictsPage } from './pages/ConflictsPage'
 import { AuditLogsPage } from './pages/AuditLogsPage'
+import { OperationsPage } from './pages/OperationsPage'
 import { useState } from 'react'
 
 export function App() {
@@ -21,13 +22,17 @@ export function App() {
 
   return (
     <AppLayout activePage={activePage} onNavigate={navigate}>
-      {activePage === 'dashboard' && <DashboardPage />}
+      {activePage === 'dashboard' && <DashboardPage onNavigate={navigate} />}
       {activePage === 'stocks' && selectedProductId && <ProductDetailPage productId={selectedProductId} onBack={() => setSelectedProductId(null)} onAddressSelect={(recordId) => { setSelectedProductId(null); setSelectedAddressId(recordId); setActivePage('addresses') }} />}
       {activePage === 'stocks' && !selectedProductId && <StocksPage onBackToDashboard={() => navigate('dashboard')} onProductSelect={setSelectedProductId} />}
       {activePage === 'addresses' && <AddressesPage onBackToDashboard={() => setActivePage('dashboard')} initialSelectedRecordId={selectedAddressId} />}
+      {activePage === 'find' && <OperationsPage page="find" />}
+      {activePage === 'import' && <OperationsPage page="import" />}
+      {activePage === 'export' && <OperationsPage page="export" />}
+      {activePage === 'settings' && <OperationsPage page="settings" />}
       {activePage === 'conflicts' && <ConflictsPage />}
       {activePage === 'audit' && <AuditLogsPage />}
-      {activePage !== 'dashboard' && activePage !== 'stocks' && activePage !== 'addresses' && activePage !== 'conflicts' && activePage !== 'audit' && <HomePage />}
+      {activePage !== 'dashboard' && activePage !== 'stocks' && activePage !== 'addresses' && activePage !== 'find' && activePage !== 'import' && activePage !== 'export' && activePage !== 'settings' && activePage !== 'conflicts' && activePage !== 'audit' && <HomePage />}
     </AppLayout>
   )
 }

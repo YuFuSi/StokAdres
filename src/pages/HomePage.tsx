@@ -581,7 +581,7 @@ export function HomePage() {
                           <span>{product.stockCode}</span>
                           {productMetrics.addressCount > 0 && <small>{productMetrics.addressCount} adres · {productMetrics.cartonCount} koli</small>}
                         </span>
-                        {product.barcode && <span className="product-result__barcode">{product.barcode}</span>}
+                        {product.barcodes.length > 0 && <span className="product-result__barcode">{product.barcodes.join(' · ')}</span>}
                       </button>
                     )
                   })()
@@ -596,7 +596,7 @@ export function HomePage() {
                   <div className="selected-product">
                     <span className="selected-product__label">Seçilen ürün</span>
                     <strong>{selectedProduct.stockName}</strong>
-                    <span>{selectedProduct.stockCode}{selectedProduct.barcode ? ` · ${selectedProduct.barcode}` : ''}</span>
+                    <span>{selectedProduct.stockCode}{selectedProduct.barcodes.length > 0 ? ` · ${selectedProduct.barcodes.join(' · ')}` : ''}</span>
                     <div className="quick-copy-actions">
                       <button className="button button--secondary" type="button" onClick={() => copyText(selectedProduct.stockCode)}>Stok kodunu kopyala</button>
                       <button className="button button--secondary" type="button" onClick={copySelectedProduct}>Tüm adresleri kopyala</button>

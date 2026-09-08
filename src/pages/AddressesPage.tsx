@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { MapPin, MoreHorizontal, Plus, Search } from 'lucide-react'
 import { addressRecordService } from '../data/localData'
 import { DuplicateActiveAddressError } from '../services/addressRecordService'
 import { listProducts } from '../services/productService'
@@ -74,6 +75,7 @@ export function AddressesPage({ onBackToDashboard, initialSelectedRecordId = nul
     active: records.filter((record) => record.isActive).length,
     inactive: records.filter((record) => !record.isActive).length,
   }
+  const totalCartons = records.filter((record) => record.isActive).reduce((sum, record) => sum + record.cartonCount, 0)
 
   const closeForm = () => {
     setIsFormOpen(false)
@@ -160,21 +162,20 @@ export function AddressesPage({ onBackToDashboard, initialSelectedRecordId = nul
     <main className="addresses-page">
       <header className="addresses-page__header">
         <div>
-          <p className="intro__eyebrow">ADRES YÖNETİMİ</p>
+          <p className="intro__eyebrow">OPERASYON / FİZİKSEL KONUM</p>
           <h1>Adresler</h1>
-          <p className="addresses-page__description">Ürünlere bağlı adres ve konum kayıtlarının görünümü</p>
+          <p className="addresses-page__description">Depodaki fiziksel konumları yönetin.</p>
         </div>
         <div className="addresses-page__header-actions">
-          <button className="button button--primary" type="button" onClick={openCreateForm}>+ Adres Ekle</button>
-          <button className="button button--secondary" type="button" onClick={onBackToDashboard}>Dashboard'a dön</button>
+          <button className="button button--primary" type="button" onClick={openCreateForm}><Plus size={15}/> Adres Ekle</button>
         </div>
       </header>
 
       <section className="addresses-toolbar" aria-label="Adres filtreleri">
         <label className="addresses-search">
-          <span aria-hidden="true">⌕</span>
+          <Search size={17} aria-hidden="true" />
           <span className="visually-hidden">Adres, stok kodu, stok adı veya barkod ara</span>
-          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Adres, stok kodu, stok adı veya barkod ara..." />
+          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Adres veya stok kodu ara..." />
         </label>
         <div className="addresses-filter-group" aria-label="Durum filtreleri">
           <FilterButton active={filter === 'all'} onClick={() => setFilter('all')}>Tümü <strong>{counts.all}</strong></FilterButton>
@@ -192,18 +193,25 @@ export function AddressesPage({ onBackToDashboard, initialSelectedRecordId = nul
         </label>
       </section>
 
+      <section className="address-summary-strip" aria-label="Adres operasyon özeti">
+        <SummaryMetric label="Toplam adres" value={counts.all} />
+        <SummaryMetric label="Aktif" value={counts.active} />
+        <SummaryMetric label="Pasif" value={counts.inactive} />
+        <SummaryMetric label="Toplam koli" value={totalCartons} />
+      </section>
+
       {isLoading && <p className="addresses-state" role="status">Adresler yükleniyor...</p>}
       {!isLoading && error && <p className="addresses-state addresses-state--error" role="alert">{error}</p>}
       {!isLoading && !error && (
-        <div className="addresses-layout">
+        <div className={`addresses-layout ${selectedRecord ? 'addresses-layout--detail-open' : ''}`}>
           <section className="addresses-table-panel" aria-label="Adres kayıtları">
-            <div className="addresses-table-caption"><span>{filteredRecords.length} kayıt</span><span>Adres bazında görünüm</span></div>
+            <div className="addresses-table-caption"><span>{filteredRecords.length} kayıt</span><span>Adres bazında görünüm · satıra tıklayarak ayrıntıyı açın</span></div>
             {records.length === 0 ? <p className="addresses-state">Henüz adres kaydı bulunmuyor.</p> : filteredRecords.length === 0 ? <p className="addresses-state">Aramanızla eşleşen adres bulunamadı.</p> : (
               <div className="addresses-table-wrap">
                 <table className="addresses-table">
-                  <thead><tr><th>Stok kodu</th><th>Stok adı</th><th>Adres</th><th>Koli</th><th>Durum</th><th>Güncellenme</th></tr></thead>
+                  <thead><tr><th>Adres</th><th>Stok kodu</th><th>Stok adı</th><th>Koli</th><th>Durum</th><th>Güncellenme</th><th aria-label="Aksiyon" /></tr></thead>
                   <tbody>{filteredRecords.map((record) => <tr className={selectedRecordId === record.id ? 'addresses-row addresses-row--selected' : 'addresses-row'} key={record.id} onClick={() => { setSelectedRecordId(record.id); closeForm() }}>
-                    <td><strong>{record.stockCode}</strong></td><td>{record.stockName}</td><td>{record.address}</td><td>{record.cartonCount}</td><td><StatusBadge isActive={record.isActive} /></td><td>{formatDate(record.updatedAt)}</td>
+                    <td><span className="address-cell"><MapPin size={14}/>{record.address}</span></td><td><strong>{record.stockCode}</strong></td><td className="address-product-name">{record.stockName}</td><td><strong className="carton-cell">{record.cartonCount}</strong></td><td><StatusBadge isActive={record.isActive} /></td><td>{formatDate(record.updatedAt)}</td><td><button className="address-row-action" type="button" aria-label={`${record.address} ayrıntısını aç`} onClick={(event) => { event.stopPropagation(); setSelectedRecordId(record.id); closeForm() }}><MoreHorizontal size={17}/></button></td>
                   </tr>)}</tbody>
                 </table>
               </div>
@@ -253,13 +261,17 @@ type AddressFormProps = {
 function AddressForm(props: AddressFormProps) {
   return <form className="address-form-panel" onSubmit={props.onSubmit}>
     <span className="selected-product__label">{props.isEditing ? 'Adres kaydını düzenle' : 'Yeni adres kaydı'}</span>
-    <label>Ürün<select value={props.selectedProductId} onChange={(event) => props.setSelectedProductId(event.target.value)} disabled={props.isEditing}><option value="">Ürün seçin</option>{props.products.map((product) => <option value={product.id} key={product.id}>{product.stockCode} · {product.stockName}</option>)}</select></label>
+    <label>Stok kodu / stok<select value={props.selectedProductId} onChange={(event) => props.setSelectedProductId(event.target.value)} disabled={props.isEditing}><option value="">Stok seçin</option>{props.products.map((product) => <option value={product.id} key={product.id}>{product.stockCode} · {product.stockName}</option>)}</select></label>
     <label>Adres<input value={props.address} onChange={(event) => props.setAddress(event.target.value)} placeholder="Örn. A1-1" /></label>
     <label>Koli adedi<input type="number" min="1" step="1" value={props.cartonCount} onChange={(event) => props.setCartonCount(event.target.value)} placeholder="Örn. 15" /></label>
     <label className="address-active-toggle"><input type="checkbox" checked={props.isActive} onChange={(event) => props.setIsActive(event.target.checked)} /> Aktif kayıt</label>
     {props.error && <p className="form-error" role="alert">{props.error}</p>}
     <div className="record-actions"><button className="button button--primary" type="submit" disabled={props.isSaving}>{props.isSaving ? 'Kaydediliyor...' : 'Kaydet'}</button><button className="button button--secondary" type="button" onClick={props.onCancel}>Vazgeç</button></div>
   </form>
+}
+
+function SummaryMetric({ label, value }: { label: string; value: number }) {
+  return <div><span>{label}</span><strong>{value}</strong></div>
 }
 
 function compareRecords(left: AddressRecord, right: AddressRecord, sort: AddressSort): number {

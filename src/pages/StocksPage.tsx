@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Plus, Search, X } from 'lucide-react'
 import { addressRecordService, getProductsWithAddressRecords } from '../data/localData'
 import { filterAndSortProducts, getProductMetrics, type ProductFilter, type ProductSort } from '../services/productListing'
 import { createProduct, DuplicateProductBarcodeError, DuplicateProductStockCodeError, listProducts } from '../services/productService'
@@ -45,6 +46,19 @@ export function StocksPage({ onBackToDashboard, onProductSelect }: StocksPagePro
       })
       .finally(() => { if (isMounted) setIsLoading(false) })
     return () => { isMounted = false }
+  }, [])
+
+  useEffect(() => {
+    if (!isCreateFormOpen) return
+    const onKeyDown = (event: KeyboardEvent) => { if (event.key === 'Escape') closeCreateForm() }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [isCreateFormOpen, isCreating])
+
+  useEffect(() => {
+    const open = () => openCreateForm()
+    window.addEventListener('stokadres:create-product', open)
+    return () => window.removeEventListener('stokadres:create-product', open)
   }, [])
 
   const openCreateForm = () => {
@@ -134,21 +148,20 @@ export function StocksPage({ onBackToDashboard, onProductSelect }: StocksPagePro
     <main className="stocks-page">
       <header className="stocks-page__header">
         <div>
-          <p className="intro__eyebrow">ÜRÜN YÖNETİMİ</p>
+          <p className="intro__eyebrow">OPERASYON / ENVANTER</p>
           <h1>Stoklar</h1>
-          <p className="stocks-page__description">Sistemdeki stokların genel görünümü</p>
+          <p className="stocks-page__description">Stok kayıtlarını görüntüleyin ve yönetin.</p>
         </div>
         <div className="stocks-page__header-actions">
-          <button className="button button--primary" type="button" onClick={openCreateForm}>+ Stok Ekle</button>
-          <button className="button button--secondary" type="button" onClick={onBackToDashboard}>Dashboard'a dön</button>
+          <button className="button button--primary" type="button" onClick={openCreateForm}><Plus size={15} /> Stok Ekle</button>
         </div>
       </header>
 
       <section className="stocks-toolbar" aria-label="Stok filtreleri">
         <label className="stocks-search">
-          <span aria-hidden="true">⌕</span>
+          <Search size={17} aria-hidden="true" />
           <span className="visually-hidden">Stok kodu, stok adı veya barkod ara</span>
-          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Stok kodu, stok adı veya barkod ara..." />
+          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Stok kodu, isim veya barkod ara..." />
         </label>
         <div className="stocks-filter-group" aria-label="Adres filtreleri">
           <button className={filter === 'all' ? 'stocks-filter stocks-filter--active' : 'stocks-filter'} type="button" onClick={() => setFilter('all')}>Tümü <strong>{counts.all}</strong></button>
@@ -166,24 +179,25 @@ export function StocksPage({ onBackToDashboard, onProductSelect }: StocksPagePro
       </section>
 
       {isLoading && <p className="stocks-state" role="status">Stoklar yükleniyor...</p>}
-      {!isLoading && error && <p className="stocks-state stocks-state--error" role="alert">{error}</p>}
+      {!isLoading && error && <div className="stocks-state stocks-state--error" role="alert"><p>{error}</p><button className="button button--secondary" type="button" onClick={() => { setError(''); setIsLoading(true); loadStocks().catch(() => setError('Stoklar yüklenirken bir sorun oluştu.')).finally(() => setIsLoading(false)) }}>Tekrar Dene</button></div>}
       {!isLoading && !error && (
         <div className="stocks-layout stocks-layout--list-only">
           <section className="stocks-table-panel" aria-label="Stok listesi">
-            <div className="stocks-table-caption"><span>{visibleProducts.length} stok</span><span>Ürün bazında görünüm</span></div>
+            <div className="stocks-table-caption"><span>{visibleProducts.length} stok</span><span>Ürün bazında görünüm · satıra tıklayarak açın</span></div>
             {productsWithRecords.length === 0 ? <div className="stocks-state"><p>Henüz stok bulunmuyor.</p><button className="button button--primary" type="button" onClick={openCreateForm}>+ Stok Ekle</button></div> : visibleProducts.length === 0 ? <p className="stocks-state">Aramanızla eşleşen stok bulunamadı.</p> : (
               <div className="stocks-table-wrap">
                 <table className="stocks-table">
-                  <thead><tr><th>Stok kodu</th><th>Stok adı</th><th>Barkod</th><th>Adres</th><th>Koli</th><th>Durum</th></tr></thead>
+                  <thead><tr><th>Stok kodu</th><th>Stok</th><th>Barkod</th><th>Adres</th><th>Koli</th><th>Durum</th><th aria-label="İşlemler" /></tr></thead>
                   <tbody>{visibleProducts.map((product) => {
                     const metrics = getProductMetrics(product, records)
                     return <tr className="stocks-row" key={product.id} onClick={() => onProductSelect(product.id)}>
                       <td><strong>{product.stockCode}</strong></td>
                       <td>{product.stockName}</td>
-                      <td>{product.barcodes.length > 0 ? product.barcodes.join(' • ') : '-'}</td>
-                      <td>{metrics.activeAddressCount}</td>
+                      <td className="barcode-summary">{product.barcodes.length ? <><span>{product.barcodes[0]}</span>{product.barcodes.length > 1 && <small>+{product.barcodes.length - 1} barkod</small>}</> : <span>—</span>}</td>
+                      <td>{metrics.activeAddressCount ? `${metrics.activeAddressCount} adres` : 'Adres yok'}</td>
                       <td>{metrics.totalCartons}</td>
                       <td><span className="stock-status">{product.isActive === false ? 'Pasif' : 'Aktif'}</span></td>
+                      <td><button className="table-action" type="button" onClick={(event) => { event.stopPropagation(); onProductSelect(product.id) }}>Görüntüle</button></td>
                     </tr>
                   })}</tbody>
                 </table>
@@ -195,8 +209,8 @@ export function StocksPage({ onBackToDashboard, onProductSelect }: StocksPagePro
       {isCreateFormOpen && <div className="stocks-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) closeCreateForm() }}>
         <section className="stocks-modal" role="dialog" aria-modal="true" aria-labelledby="create-stock-title">
           <div className="stocks-modal__header">
-            <div><p className="intro__eyebrow">YENİ ÜRÜN</p><h2 id="create-stock-title">Stok Ekle</h2></div>
-            <button className="modal-close" type="button" onClick={closeCreateForm} aria-label="Stok ekleme formunu kapat">×</button>
+            <div><p className="intro__eyebrow">YENİ STOK</p><h2 id="create-stock-title">Yeni Stok</h2><p className="stocks-modal__description">Stok kodu ve isim bilgilerini girin. Barkodları daha sonra da ekleyebilirsiniz.</p></div>
+            <button className="modal-close" type="button" onClick={closeCreateForm} aria-label="Stok ekleme formunu kapat"><X size={18}/></button>
           </div>
           <form className="stocks-create-form" onSubmit={saveProduct}>
             <label>Stok Kodu *<input value={stockCode} onChange={(event) => setStockCode(event.target.value)} placeholder="Örn. STK-001" autoFocus /></label>
@@ -207,7 +221,7 @@ export function StocksPage({ onBackToDashboard, onProductSelect }: StocksPagePro
               {barcodes.length > 0 && <ul className="stocks-barcode-list">{barcodes.map((barcode) => <li key={barcode}><span>{barcode}</span><button type="button" onClick={() => removeBarcodeInput(barcode)} aria-label={`${barcode} barkodunu kaldır`}>Kaldır</button></li>)}</ul>}
             </div>
             {formError && <p className="form-error" role="alert">{formError}</p>}
-            <div className="record-actions"><button className="button button--primary" type="submit" disabled={isCreating}>{isCreating ? 'Oluşturuluyor...' : 'Stok Oluştur'}</button><button className="button button--secondary" type="button" onClick={closeCreateForm} disabled={isCreating}>Vazgeç</button></div>
+            <div className="record-actions"><button className="button button--secondary" type="button" onClick={closeCreateForm} disabled={isCreating}>İptal</button><button className="button button--primary" type="submit" disabled={isCreating}>{isCreating ? 'Oluşturuluyor...' : 'Stok Oluştur'}</button></div>
           </form>
         </section>
       </div>}

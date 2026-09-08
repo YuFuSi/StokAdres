@@ -6,6 +6,8 @@ export type DashboardData = {
   totalActiveAddresses: number
   stocksWithMultipleAddresses: number
   totalActiveRecords: number
+  totalCartons: number
+  stocksWithoutAddress: number
   recentRecords: AddressRecord[]
 }
 
@@ -26,6 +28,8 @@ export async function getDashboardData(): Promise<DashboardData> {
     totalActiveAddresses: activeRecords.length,
     stocksWithMultipleAddresses: [...addressesByStock.values()].filter((count) => count > 1).length,
     totalActiveRecords: activeRecords.length,
+    totalCartons: activeRecords.reduce((total, record) => total + record.cartonCount, 0),
+    stocksWithoutAddress: products.filter((product) => !activeRecords.some((record) => record.productId === product.id)).length,
     recentRecords: [...records]
       .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
       .slice(0, 5),

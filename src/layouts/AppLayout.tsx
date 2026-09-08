@@ -1,50 +1,26 @@
-import type { ReactNode } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { Boxes, ChevronLeft, FileWarning, History, Home, Import, MapPin, PackageSearch, Search, Settings, Upload, X } from 'lucide-react'
 
-export type AppPage = 'dashboard' | 'stocks' | 'addresses' | 'conflicts' | 'audit' | 'import' | 'export' | 'settings'
+export type AppPage = 'dashboard' | 'stocks' | 'addresses' | 'find' | 'conflicts' | 'audit' | 'import' | 'export' | 'settings'
+type AppLayoutProps = { children: ReactNode; activePage: AppPage; onNavigate: (page: AppPage) => void }
+type NavItem = { id: AppPage; label: string; icon: typeof Home }
 
-type AppLayoutProps = {
-  children: ReactNode
-  activePage: AppPage
-  onNavigate: (page: AppPage) => void
-}
-
-const navigationGroups = [
-  { label: 'Genel', items: [{ id: 'dashboard', label: 'Dashboard', icon: '⌂' }] },
-  { label: 'Yönetim', items: [{ id: 'stocks', label: 'Stoklar', icon: '▦' }, { id: 'addresses', label: 'Adresler', icon: '⌖' }, { id: 'conflicts', label: 'Çakışmalar', icon: '!' }] },
-  { label: 'Veri', items: [{ id: 'import', label: 'İçeri Aktar', icon: '↓' }, { id: 'export', label: 'Dışa Aktar', icon: '↑' }] },
-  { label: 'Sistem', items: [{ id: 'audit', label: 'İşlem Geçmişi', icon: '◷' }, { id: 'settings', label: 'Ayarlar', icon: '⚙' }] },
-] as const
+const navigationGroups: { label: string; items: NavItem[] }[] = [
+  { label: 'Operasyon', items: [{ id: 'dashboard', label: 'Genel Bakış', icon: Home }, { id: 'stocks', label: 'Stoklar', icon: Boxes }, { id: 'addresses', label: 'Adresler', icon: MapPin }, { id: 'find', label: 'Adres Bul', icon: PackageSearch }] },
+  { label: 'Veri', items: [{ id: 'import', label: 'İçe Aktar', icon: Import }, { id: 'export', label: 'Dışa Aktar', icon: Upload }] },
+  { label: 'Sistem', items: [{ id: 'conflicts', label: 'Çakışmalar', icon: FileWarning }, { id: 'audit', label: 'İşlem Geçmişi', icon: History }, { id: 'settings', label: 'Ayarlar', icon: Settings }] },
+]
+const commandItems: Array<{ label: string; page: AppPage; hint: string }> = [{ label: 'Stok ara', page: 'stocks', hint: 'Stok listesine git' }, { label: 'Adres ara', page: 'find', hint: 'Hızlı operasyon araması' }, { label: 'Stok ekle', page: 'stocks', hint: 'Stoklar ekranını aç' }, { label: 'Excel içe aktar', page: 'import', hint: 'Veri içe aktarma' }, { label: 'Dışa aktar', page: 'export', hint: 'Veri dışa aktarma' }, { label: 'Ayarlar', page: 'settings', hint: 'Uygulama tercihleri' }]
 
 export function AppLayout({ children, activePage, onNavigate }: AppLayoutProps) {
-  return (
-    <div className="app-shell">
-      <aside className="app-sidebar">
-        <div className="sidebar-brand">
-          <span className="brand__mark">SA</span>
-          <span className="brand__name">StokAdres</span>
-        </div>
-        <nav className="sidebar-nav" aria-label="Ana navigasyon">
-          {navigationGroups.map((group) => (
-            <div className="sidebar-group" key={group.label}>
-              <span className="sidebar-group__label">{group.label}</span>
-              {group.items.map((item) => (
-                <button
-                  className={`sidebar-link ${activePage === item.id ? 'sidebar-link--active' : ''}`}
-                  key={item.id}
-                  type="button"
-                  onClick={() => onNavigate(item.id)}
-                  aria-current={activePage === item.id ? 'page' : undefined}
-                >
-                  <span className="sidebar-link__icon" aria-hidden="true">{item.icon}</span>
-                  <span>{item.label}</span>
-                </button>
-              ))}
-            </div>
-          ))}
-        </nav>
-        <div className="sidebar-footer"><span className="status-dot" /> Supabase bağlantısı</div>
-      </aside>
-      <div className="app-shell__main">{children}</div>
-    </div>
-  )
+  const [isCommandOpen, setIsCommandOpen] = useState(false); const [query, setQuery] = useState(''); const [collapsed, setCollapsed] = useState(false)
+  const activeLabel = navigationGroups.flatMap((group) => group.items).find((item) => item.id === activePage)?.label ?? 'StokAdres'
+  const visibleCommands = useMemo(() => commandItems.filter((item) => item.label.toLocaleLowerCase('tr-TR').includes(query.toLocaleLowerCase('tr-TR'))), [query])
+  useEffect(() => { const handleKey = (event: KeyboardEvent) => { if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') { event.preventDefault(); setIsCommandOpen(true) } if (event.key === 'Escape') setIsCommandOpen(false) }; window.addEventListener('keydown', handleKey); return () => window.removeEventListener('keydown', handleKey) }, [])
+  const navigate = (page: AppPage) => { onNavigate(page); setIsCommandOpen(false); setQuery('') }
+  const runCommand = (item: typeof commandItems[number]) => {
+    navigate(item.page)
+    if (item.label === 'Stok ekle') window.setTimeout(() => window.dispatchEvent(new Event('stokadres:create-product')), 0)
+  }
+  return <div className={`app-shell ${collapsed ? 'app-shell--collapsed' : ''}`}><aside className="app-sidebar"><div className="sidebar-brand"><span className="brand__mark">SA</span><span className="sidebar-brand__words"><span className="brand__name">StokAdres</span><small className="brand__context">Depo Yönetimi</small></span><button className="sidebar-collapse" type="button" onClick={() => setCollapsed((value) => !value)} title={collapsed ? 'Menüyü genişlet' : 'Menüyü daralt'}><ChevronLeft size={16}/></button></div><nav className="sidebar-nav" aria-label="Ana navigasyon">{navigationGroups.map((group) => <div className="sidebar-group" key={group.label}><span className="sidebar-group__label">{group.label}</span>{group.items.map((item) => { const Icon = item.icon; return <button title={collapsed ? item.label : undefined} className={`sidebar-link ${activePage === item.id ? 'sidebar-link--active' : ''}`} key={item.id} type="button" onClick={() => navigate(item.id)} aria-current={activePage === item.id ? 'page' : undefined}><Icon size={16} strokeWidth={1.75} /><span>{item.label}</span></button> })}</div>)}</nav><div className="sidebar-footer"><span className="status-dot" /><span><strong>Sistem çevrimiçi</strong><small>Supabase bağlantısı aktif</small></span></div></aside><div className="app-shell__main"><header className="application-bar"><div><span className="application-bar__eyebrow">StokAdres / Operasyon</span><strong>{activeLabel}</strong></div><button className="command-trigger" type="button" onClick={() => setIsCommandOpen(true)}><Search size={15} /><span>Stok, barkod veya adres ara</span><kbd>Ctrl K</kbd></button></header>{children}</div>{isCommandOpen && <div className="command-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setIsCommandOpen(false) }}><section className="command-palette" role="dialog" aria-modal="true" aria-label="Hızlı komutlar"><div className="command-palette__input"><Search size={18} /><input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Komut veya ekran ara..." /><button type="button" onClick={() => setIsCommandOpen(false)} aria-label="Komut paletini kapat"><X size={17} /></button></div><div className="command-palette__list">{visibleCommands.map((item) => <button type="button" key={item.label} onClick={() => runCommand(item)}><span><strong>{item.label}</strong><small>{item.hint}</small></span><span>↵</span></button>)}</div></section></div>}</div>
 }

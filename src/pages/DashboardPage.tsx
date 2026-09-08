@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react'
 import { getDashboardData, type DashboardData } from '../services/dashboardService'
+import { ArrowRight, Download, MapPin, PackagePlus, Upload } from 'lucide-react'
+import type { AppPage } from '../layouts/AppLayout'
 
-export function DashboardPage() {
+export function DashboardPage({ onNavigate }: { onNavigate: (page: AppPage) => void }) {
   const [data, setData] = useState<DashboardData | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState('')
@@ -24,8 +26,8 @@ export function DashboardPage() {
       <header className="page-header">
         <div>
           <p className="intro__eyebrow">GENEL BAKIŞ</p>
-          <h1>Dashboard</h1>
-          <p className="page-header__description">Stok ve adres operasyonlarınızın güncel görünümü.</p>
+          <h1>Genel Bakış</h1>
+          <p className="page-header__description">Depodaki mevcut durumu tek bakışta görün.</p>
         </div>
         <span className="topbar__status"><span className="status-dot" /> Canlı veri</span>
       </header>
@@ -35,10 +37,14 @@ export function DashboardPage() {
       {data && !error && (
         <>
           <section className="dashboard-metrics" aria-label="Stok metrikleri">
-            <Metric label="Toplam stok" value={data.totalStocks} />
-            <Metric label="Aktif adres" value={data.totalActiveAddresses} />
-            <Metric label="Çok adresli stok" value={data.stocksWithMultipleAddresses} />
-            <Metric label="Aktif kayıt" value={data.totalActiveRecords} />
+            <Metric label="Toplam stok" hint="Kayıtlı ürün kartı" value={data.totalStocks} />
+            <Metric label="Toplam koli" hint="Aktif konumlardaki miktar" value={data.totalCartons} />
+            <Metric label="Adresli stok" hint="Fiziksel konumu olan" value={data.totalStocks - data.stocksWithoutAddress} />
+            <Metric label="Adresi olmayan" hint="Konum bekleyen ürün" value={data.stocksWithoutAddress} />
+          </section>
+          <section className="dashboard-operations">
+            <div className="dashboard-activity"><div className="section-heading"><h2>Son İşlemler</h2><span className="section-heading__line" /></div><p><span className="status-dot" /> {data.totalActiveRecords} aktif adres kaydı depoda takip ediliyor.</p><p className="dashboard-activity__hint">Kayıt ayrıntıları ve geçmiş hareketler sistem ekranından izlenebilir.</p></div>
+            <div className="dashboard-quick"><div className="section-heading"><h2>Hızlı İşlemler</h2></div><div>{[[PackagePlus,'Stok Ekle','stocks'],[MapPin,'Adres Bul','find'],[Upload,'Excel İçe Aktar','import'],[Download,'Dışa Aktar','export']].map(([Icon,label,page]) => { const ActionIcon = Icon as typeof PackagePlus; return <button key={label as string} type="button" onClick={() => onNavigate(page as AppPage)}><ActionIcon size={16}/><span>{label as string}</span><ArrowRight size={14}/></button> })}</div></div>
           </section>
           <section className="dashboard-section" aria-labelledby="recent-records-title">
             <div className="section-heading"><h2 id="recent-records-title">Son Eklenen Stoklar</h2><span className="section-heading__line" /></div>
@@ -67,8 +73,8 @@ export function DashboardPage() {
   )
 }
 
-function Metric({ label, value }: { label: string; value: number }) {
-  return <div className="dashboard-metric"><span>{label}</span><strong>{value}</strong></div>
+function Metric({ label, hint, value }: { label: string; hint: string; value: number }) {
+  return <div className="dashboard-metric"><div className="dashboard-metric__top"><span>{label}</span></div><strong>{value}</strong><small>{hint}</small></div>
 }
 
 function formatDate(value: string): string {
