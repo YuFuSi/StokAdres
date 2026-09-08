@@ -23,6 +23,6 @@ npm start
 
 ## Mevcut kapsam
 
-İlk iki aşamada Electron + React + TypeScript + Vite iskeleti, ürün modelleri, demo ürün verileri, ürün arama servisi ve lokal adres kayıt servisi bulunur. Veritabanı, Excel işlemleri, giriş sistemi, backend/API ve adres kayıt ekranı henüz eklenmemiştir.
+Uygulama ürün, barkod ve fiziksel adres kayıtlarını Supabase üzerinden yönetir. Electron + React + TypeScript + Vite yapısında çalışır; adres kayıtları uygulama yeniden açıldığında Supabase'den yeniden yüklenir.
 
-Adres kayıt servisi bellekte çalışır ve uygulama kapanınca veriler kalıcı olarak saklanmaz. Bu sınır, ileride SQLite tabanlı bir depolama katmanına geçiş için korunmuştur.
+İçe aktarma ekranı CSV, XLSX ve XLS dosyalarında stok adı güncelleme, barkod atama, adres/koli aktarımı ve CABA adres eşleştirmesi sunar. Veri yazılmadan önce önizleme ve kullanıcı onayı gerekir. Dışa aktarma CSV (UTF-8 BOM) ve Excel (`.xlsx`) formatlarında Electron kaydetme diyaloğu kullanarak dosya oluşturur.

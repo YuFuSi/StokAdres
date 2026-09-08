@@ -38,6 +38,16 @@ electron_1.app.whenReady().then(() => {
         await promises_1.default.writeFile(result.filePath, payload.content, 'utf8');
         return { canceled: false, filePath: result.filePath };
     });
+    electron_1.ipcMain.handle('save-file', async (_event, payload) => {
+        const result = await electron_1.dialog.showSaveDialog({
+            title: 'Excel dışa aktar', defaultPath: payload.suggestedName,
+            filters: [{ name: 'Excel dosyası', extensions: ['xlsx'] }],
+        });
+        if (result.canceled || !result.filePath)
+            return { canceled: true };
+        await promises_1.default.writeFile(result.filePath, payload.content, payload.encoding);
+        return { canceled: false, filePath: result.filePath };
+    });
     createWindow();
     electron_1.app.on('activate', () => {
         if (electron_1.BrowserWindow.getAllWindows().length === 0)
