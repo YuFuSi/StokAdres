@@ -5,8 +5,8 @@ import type {
 } from '../types/addressRecord'
 import type { Product } from '../types/product'
 import { supabase } from '../lib/supabase'
+import { fetchAllRows } from '../lib/pagination'
 import { createProduct, getProductByStockCode, listProducts } from './productService'
-import { createOperationId } from './auditLogService'
 
 type ProductRelation = {
   stock_code: string
@@ -28,6 +28,19 @@ export class DuplicateActiveAddressError extends Error {
   constructor(stockCode: string, address: string) {
     super(`${stockCode} stok kodu ve ${address} adresi için zaten aktif bir kayıt var.`)
     this.name = 'DuplicateActiveAddressError'
+  }
+}
+
+/**
+ * Toplu silme/geri yükleme yetenekleri Sprint 0.1'de istemci tarafından
+ * kaldırıldı. Detaylı gerekçe AddressRecordService.replaceAll/clear üzerinde.
+ */
+export class DestructiveOperationUnavailableError extends Error {
+  constructor(operation: string) {
+    super(
+      `${operation} işlemi bu uygulamadan kullanılamıyor. Tüm adres kayıtlarını tek seferde silen bu yetenek güvenlik nedeniyle kaldırıldı.`,
+    )
+    this.name = 'DestructiveOperationUnavailableError'
   }
 }
 
@@ -111,26 +124,55 @@ export class AddressRecordService {
     return Boolean(count)
   }
 
-  async replaceAll(records: AddressRecord[]): Promise<void> {
-    const { error } = await supabase.rpc('restore_address_records', {
-      p_records: records,
-      p_operation_id: createOperationId(),
-    })
-    if (error) throw error
+  // Sprint 0.1'de public.restore_address_records(jsonb, uuid) ve
+  // public.clear_address_records(uuid) fonksiyonlarının EXECUTE yetkisi
+  // public/anon/authenticated rollerinden geri alındı
+  // (20260908_revoke_destructive_rpc_grants.sql). Her ikisi de SECURITY DEFINER
+  // ve WHERE'siz `delete from public.address_records` çalıştırıyor; uygulama
+  // publishable anahtarı renderer bundle'ına gömdüğü için installer'ı eline
+  // geçiren herkes tüm adres verisini silebiliyordu.
+  //
+  // Bu iki metot yalnızca src/pages/HomePage.tsx'ten çağrılıyor ve HomePage
+  // erişilebilir değil: src/App.tsx:35 onu ancak activePage AppPage
+  // birleşimindeki 9 değerin hiçbiri değilken render ediyor, ki bu imkânsız.
+  // Yani hiçbir kullanıcı akışı etkilenmiyor.
+  //
+  // RPC çağrıları burada bilerek KALDIRILDI, geri getirilmedi:
+  //   * Çağrı bırakılsaydı yetki reddi ham bir Postgres hatası olarak
+  //     ("permission denied for function ...") kullanıcıya yansırdı.
+  //   * Ayrıca bu iki fonksiyonun adı ve parametre şekli, dağıtılan renderer
+  //     bundle'ında iki adet "tüm tabloyu sil" fonksiyonunun tarifi olarak
+  //     duruyordu. Çağrıyı kaldırmak bu haritayı bundle'dan da siliyor.
+  //
+  // Yeni bir yıkıcı RPC AÇILMADI ve eski yetkiler geri verilmedi. Toplu geri
+  // yükleme/temizleme gerçekten gerekirse, ayrı bir yetkili rol altında
+  // (Phase 8 admin rolü veya sunucu tarafı) yeniden tasarlanmalıdır.
+  async replaceAll(_records: AddressRecord[]): Promise<void> {
+    throw new DestructiveOperationUnavailableError('Yedekten toplu geri yükleme')
   }
 
   async clear(): Promise<void> {
-    const { error } = await supabase.rpc('clear_address_records', { p_operation_id: createOperationId() })
-    if (error) throw error
+    throw new DestructiveOperationUnavailableError('Tüm adres verilerini temizleme')
   }
 
+  // PostgREST tek istekte en fazla 1000 satır döndürür ve sınıra takıldığında
+  // hata vermez. Bu liste dashboard sayaçlarının, stok/adres ekranlarının ve
+  // dışa aktarmanın tek veri kaynağı olduğu için sayfalı çekiliyor: tablo
+  // 1000 kaydı aştığında uygulamanın sessizce eksik veri göstermemesi gerekir.
+  //
+  // `created_at` benzersiz değildir (toplu içe aktarmalar aynı damgayı
+  // üretebilir), bu yüzden sayfalar arası sıralamanın kararlı kalması için
+  // ikincil anahtar olarak `id` ekleniyor.
   async list(): Promise<AddressRecord[]> {
-    const { data, error } = await supabase
-      .from('address_records')
-      .select('id, product_id, address, carton_count, is_active, created_at, updated_at, products!inner(stock_code, stock_name)')
-      .order('created_at', { ascending: true })
-    if (error) throw error
-    return (data ?? []).map((record) => this.mapRecord(record as unknown as AddressRecordRow))
+    const rows = await fetchAllRows<AddressRecordRow>((from, to) =>
+      supabase
+        .from('address_records')
+        .select('id, product_id, address, carton_count, is_active, created_at, updated_at, products!inner(stock_code, stock_name)')
+        .order('created_at', { ascending: true })
+        .order('id')
+        .range(from, to),
+    )
+    return rows.map((record) => this.mapRecord(record))
   }
 
   async listProducts(): Promise<Product[]> {

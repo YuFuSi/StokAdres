@@ -1,4 +1,5 @@
 import { supabase } from '../lib/supabase'
+import { fetchAllRows } from '../lib/pagination'
 import type { CreateProductInput, Product, UpdateProductInput } from '../types/product'
 
 type ProductRow = {
@@ -32,13 +33,26 @@ export class DuplicateProductStockCodeError extends Error {
   }
 }
 
+// Canlı veritabanında 1655 ürün var; PostgREST tek istekte en fazla 1000 satır
+// döndürür ve bunu hatasız yapar (Content-Range: 0-999/1655). Sayfalı
+// çekilmezse stok listesi, dashboard sayaçları ve dışa aktarma sessizce 655
+// ürünü atlar.
+//
+// `stock_code` benzersiz olsa da sayfalar arası sıralamayı garantiye almak için
+// ikincil anahtar olarak `id` de ekleniyor; böylece eşit değerli satırlar
+// sayfalar arasında kayıp veya tekrar üretmez.
 export async function listProducts(): Promise<Product[]> {
-  const { data, error } = await supabase
-    .from('products')
-    .select('id, stock_code, stock_name, is_active, created_at, updated_at, product_barcodes(barcode)')
-    .order('stock_code')
-  if (error) throw mapProductCreateError(error)
-  return ((data ?? []) as unknown as ProductRow[]).map(mapProduct)
+  const rows = await fetchAllRows<ProductRow>(
+    (from, to) =>
+      supabase
+        .from('products')
+        .select('id, stock_code, stock_name, is_active, created_at, updated_at, product_barcodes(barcode)')
+        .order('stock_code')
+        .order('id')
+        .range(from, to),
+    mapProductCreateError,
+  )
+  return rows.map(mapProduct)
 }
 
 export async function getProductById(id: string): Promise<Product | undefined> {
