@@ -1,4 +1,5 @@
 import { supabase } from '../lib/supabase'
+import { fetchAllRows } from '../lib/pagination'
 import type { AddressRecord } from '../types/addressRecord'
 import type { AddressConflict, ConflictResolution, ConflictStatus, IncomingConflictRecord } from '../types/conflict'
 import { createOperationId } from './auditLogService'
@@ -36,23 +37,34 @@ export async function listPending(): Promise<AddressConflict[]> {
   return listByStatus('pending')
 }
 
+// listAll/listByStatus da PostgREST'in 1000 satırlık sessiz sınırına tabidir.
+// Conflict tablosu şu an boş olsa da her içe aktarma yeni kayıt üretebiliyor;
+// ConflictsPage'in çözülmemiş bir çakışmayı hiç göstermemesi kabul edilemez.
+// `created_at` benzersiz olmadığı için `id` ikincil sıralama anahtarı olarak
+// ekleniyor.
 export async function listAll(): Promise<AddressConflict[]> {
-  const { data, error } = await supabase
-    .from('address_conflicts')
-    .select('*')
-    .order('created_at', { ascending: false })
-  if (error) throw error
-  return (data ?? []).map((row) => mapConflict(row as unknown as ConflictRow))
+  const rows = await fetchAllRows<ConflictRow>((from, to) =>
+    supabase
+      .from('address_conflicts')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .order('id')
+      .range(from, to),
+  )
+  return rows.map(mapConflict)
 }
 
 export async function listByStatus(status: ConflictStatus): Promise<AddressConflict[]> {
-  const { data, error } = await supabase
-    .from('address_conflicts')
-    .select('*')
-    .eq('status', status)
-    .order('created_at', { ascending: false })
-  if (error) throw error
-  return (data ?? []).map((row) => mapConflict(row as unknown as ConflictRow))
+  const rows = await fetchAllRows<ConflictRow>((from, to) =>
+    supabase
+      .from('address_conflicts')
+      .select('*')
+      .eq('status', status)
+      .order('created_at', { ascending: false })
+      .order('id')
+      .range(from, to),
+  )
+  return rows.map(mapConflict)
 }
 
 export async function getPendingCount(): Promise<number> {
