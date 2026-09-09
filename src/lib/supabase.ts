@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
+import type { Database } from '../types/database'
 
 // Vite, VITE_* değişkenlerini derleme sırasında bundle'a inline eder. Değer
 // eksikse eskiden sahte bir URL/anahtar ('https://missing-project.supabase.co')
@@ -17,4 +18,6 @@ function readRequiredEnv(name: 'VITE_SUPABASE_URL' | 'VITE_SUPABASE_ANON_KEY'): 
 const supabaseUrl = readRequiredEnv('VITE_SUPABASE_URL')
 const supabaseAnonKey = readRequiredEnv('VITE_SUPABASE_ANON_KEY')
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey)
+// Database generic'i sorgu sonuclarini tipler; kolon adi hatalari artik
+// derleme zamaninda yakalanir. src/types/database.ts otomatik uretilir.
+export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey)

@@ -96,10 +96,15 @@ export async function create(input: CreateConflictInput): Promise<AddressConflic
     p_existing_is_active: existing.isActive,
     p_incoming_stock_code: incoming.stockCode,
     p_incoming_stock_name: incoming.stockName,
-    p_incoming_barcode: incoming.barcode ?? null,
+    // Supabase tip ureteci, varsayilan degeri olmayan fonksiyon parametrelerini
+    // NOT NULL olarak tipler. Bu iki parametre Postgres tarafinda text (nullable)
+    // ve address_conflicts.incoming_barcode / incoming_source kolonlari da
+    // nullable; null gondermek dogru davranis. Cast yalnizca ureticinin bu
+    // eksigini kapatir, calisma zamani davranisi degismez.
+    p_incoming_barcode: (incoming.barcode ?? null) as string,
     p_incoming_address: incoming.address.trim(),
     p_incoming_carton_count: incoming.cartonCount,
-    p_source: incoming.source ?? null,
+    p_source: (incoming.source ?? null) as string,
   })
   if (error) throw error
   return mapConflict(data as unknown as ConflictRow)
