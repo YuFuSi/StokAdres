@@ -20,8 +20,17 @@ export function App() {
     setActivePage(page)
   }
 
+  // Ctrl+K paletinden bir stok seçildiğinde doğrudan ürün detayına gidilir.
+  // navigate() selectedProductId'yi sıfırladığı için ayrı bir giriş noktası
+  // gerekiyor; aksi halde 'stocks' sayfası liste görünümünde açılırdı.
+  const openProduct = (productId: string) => {
+    setSelectedAddressId(null)
+    setSelectedProductId(productId)
+    setActivePage('stocks')
+  }
+
   return (
-    <AppLayout activePage={activePage} onNavigate={navigate}>
+    <AppLayout activePage={activePage} onNavigate={navigate} onProductSelect={openProduct}>
       {activePage === 'dashboard' && <DashboardPage onNavigate={navigate} />}
       {activePage === 'stocks' && selectedProductId && <ProductDetailPage productId={selectedProductId} onBack={() => setSelectedProductId(null)} onAddressSelect={(recordId) => { setSelectedProductId(null); setSelectedAddressId(recordId); setActivePage('addresses') }} />}
       {activePage === 'stocks' && !selectedProductId && <StocksPage onBackToDashboard={() => navigate('dashboard')} onProductSelect={setSelectedProductId} />}

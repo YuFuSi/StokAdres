@@ -60,19 +60,24 @@ supabase/migrations/   5 dosya
 
 ## ⚠️ TUZAKLAR — Bunları Bilmeden Kod Yazma
 
-1. **`src/pages/HomePage.tsx` ölü koddur.** [App.tsx:35](src/App.tsx#L35)'teki koşul
-   9 `AppPage` değerinin hepsini dışlar → asla render edilmez. `src/import/*`,
-   `dataBackup.ts`, `productSearch.ts`, `recentProducts.ts`, `ActionCard.tsx`
-   **yalnızca** buradan çağrılır → hepsi erişilemez (~1.377 satır, %18).
+1. **`src/pages/HomePage.tsx` ölü koddur.** [App.tsx](src/App.tsx)'teki koşul
+   tüm `AppPage` değerlerini dışlar → asla render edilmez. `src/import/*`,
+   `dataBackup.ts`, `recentProducts.ts`, `ActionCard.tsx` **yalnızca** buradan
+   çağrılır → erişilemez.
+   **İstisna:** `productSearch.ts` artık ölü değil — PR #1 ile komut paleti
+   (Ctrl+K) onu kullanıyor.
 
 2. **İki paralel import sistemi var.** Canlı olan `operationImportService.ts` +
    `OperationsPage.ImportHub`. Ölü olan `src/import/*` (daha gelişmiş, conflict
    üretiyor). **Sonuç: Conflicts ekranı canlı uygulamada asla veri almıyor.**
 
-3. **Sayfalama yok → aktif veri kaybı.** `list()` / `listProducts()` `.range()`
-   kullanmıyor. PostgREST max-rows=1000. `products` 1655 satır → dashboard
-   "1000" gösteriyor. `getProductsWithAddressRecords` pencerenin dışında kalan
-   adres kayıtlarından **sahte stub ürün** üretiyor (`barcodes: []`, uydurma id).
+3. ~~**Sayfalama yok**~~ → **ÇÖZÜLDÜ** (PR #1, 2026-09-09).
+   [src/lib/pagination.ts](src/lib/pagination.ts) `fetchAllRows()` helper'ı
+   PostgREST'in 1000 satırlık sessiz sınırını `.range()` döngüsüyle aşıyor.
+   `productService.listProducts`, `addressRecordService.list`,
+   `conflictService.listAll/listByStatus` bunu kullanıyor.
+   **Yeni sorgu yazarken `fetchAllRows` kullan** ve sıralamaya `id` gibi
+   benzersiz bir ikincil anahtar ekle — yoksa sayfalar arası satır kayabilir.
 
 4. **`createProduct` transaction'sız.** INSERT products → DELETE barcodes →
    INSERT barcodes. 3. adım patlarsa barkodsuz orphan ürün kalır.
@@ -158,14 +163,14 @@ sıfır/negatif koli **0**, boşluk/case anomalisi **0**. **Veri tertemiz.**
 
 | # | Sev | Sorun |
 |---|---|---|
-| 1 | 🔴 | **Sayfalama yok** — 655 ürün UI'da görünmüyor, import duplicate tespiti bozuk |
+| ~~1~~ | ✅ | ~~Sayfalama yok~~ → **PR #1 ile çözüldü** (`src/lib/pagination.ts`) |
 | 2 | 🔴 | **Auth yok** — anon key installer bundle'ında, anon tüm tablolara yazabiliyor |
 | ~~3~~ | ✅ | ~~`xlsx@0.18.5` HIGH severity~~ → **0.20.3'e geçildi (2026-09-09), `npm audit` temiz.** `package.json` SheetJS CDN tarball'ını referans alır; npm registry'deki `xlsx` kullanılmamalı |
 | 4 | 🟠 | `createProduct` transaction'sız + hata mapping bozuk |
 | 5 | 🟠 | Import kısmi yazma, satır bazlı hata raporu yok |
 | 6 | 🟠 | Conflict sistemi canlı uygulamada hiç tetiklenmiyor |
 | 7 | 🟡 | ~~Supabase client tipsiz~~ → `createClient<Database>()` devrede (2026-09-09). Kalan iş: 14 adet `as unknown as` cast'inin temizliği (iç içe ilişki seçimlerinde nullable uyumsuzluğu var, dikkatli refactor ister) |
-| 8 | 🟡 | Adres Bul kullanılamaz durumda (stok adı/adres araması yok) |
+| 8 | 🟡 | Arama kısmen düzeldi: Ctrl+K paleti PR #1 ile gerçek ürün arıyor (`productSearch`). Kalan: adresten ürün bulma (ters arama), barkod okuyucu akışı |
 | 9 | 🟡 | Trigger fonksiyonları anon'a RPC olarak açık (Supabase linter) |
 | 10 | 🟡 | `set_updated_at` / `audit_operation_id` mutable search_path |
 | 11 | 🟡 | CSP yok, installer imzasız, ikon yok |
@@ -300,5 +305,32 @@ hemen ardından düzeltir. Arada `products`'a insert olmadığı için risk yok.
 - ⚠️ **Şema değişince `src/types/database.ts` yeniden üretilmeli**
   (`generate_typescript_types` veya `supabase gen types typescript`).
 
-**Sonraki adım:** Sprint 0.3 — Pagination (Açık Sorun #1). Artık index
-envanteri ve tipler elimizde olduğu için güvenle yapılabilir.
+### PR #1 ile birleştirme (aynı gün, dördüncü tur)
+
+Paralel bir dal (`feat/global-search-and-pagination`) main'e merge edilmişti;
+Sprint 0.2 commit'i push edilirken divergence çıktı. Force push yapılmadı,
+merge ile birleştirildi.
+
+**PR #1'in getirdikleri (korundu):**
+- `src/lib/pagination.ts` → `fetchAllRows()`; 4 serviste kullanılıyor.
+  **Açık Sorun #1 (sayfalama) çözüldü.**
+- Ctrl+K komut paleti artık gerçek ürün arıyor (`productSearch.ts` canlandı).
+- `replaceAll` / `clear` revoke edilmiş RPC'leri çağırmak yerine hata fırlatıyor.
+
+**Merge sırasında çözülenler:**
+- `conflictService.ts`: tipli client, PR #1'in `p_incoming_barcode: ... ?? null`
+  satırlarını reddetti. Ayrıca elle yazılmış `ConflictRow`, üretilen tipin
+  `conflict_type: string` alanıyla çakıştı (CHECK constraint'i tip üreteci
+  ifade edemiyor). `ConflictRow` artık
+  `Database['public']['Tables']['address_conflicts']['Row']`'a eşitlendi,
+  daraltma `mapConflict` içinde yapılıyor.
+- ⚠️ **`20260901_create_core_schema.sql` SİLİNDİ.** PR #1 kendi core schema
+  dosyasını eklemişti ama canlıyla uyuşmuyordu: farklı index/policy isimleri,
+  **`products` DELETE policy'si eksik**, **`product_barcodes` barkod UNIQUE
+  index'i eksik**, ve `set_updated_at` yerine `stokadres_set_updated_at`.
+  Sıfırdan kurulan bir DB production'dan sapardı. Korunan
+  `20260904000000_create_core_schema.sql` pg_catalog'dan türetildi, canlıda
+  çalıştırılıp no-op olduğu doğrulandı ve migration geçmişine kayıtlı.
+
+**Sonraki adım:** Sprint 0.4 — Data Layer Integrity (`createProduct`
+transaction'sız + hata mapping bozuk; Açık Sorun #4).

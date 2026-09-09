@@ -1,31 +1,17 @@
 import { supabase } from '../lib/supabase'
+import { fetchAllRows } from '../lib/pagination'
 import type { AddressRecord } from '../types/addressRecord'
-import type { AddressConflict, ConflictResolution, ConflictStatus, IncomingConflictRecord } from '../types/conflict'
+import type { AddressConflict, ConflictResolution, ConflictStatus, ConflictType, IncomingConflictRecord } from '../types/conflict'
+import type { Database } from '../types/database'
 import { createOperationId } from './auditLogService'
 
-type ConflictRow = {
-  id: string
-  conflict_type: 'address-duplicate'
-  status: ConflictStatus
-  product_id: string | null
-  stock_code: string
-  stock_name: string
-  address: string
-  existing_record_id: string | null
-  existing_carton_count: number | null
-  existing_is_active: boolean | null
-  existing_created_at: string | null
-  existing_updated_at: string | null
-  incoming_stock_code: string
-  incoming_stock_name: string
-  incoming_barcode: string | null
-  incoming_address: string
-  incoming_carton_count: number
-  incoming_source: string | null
-  created_at: string
-  resolved_at: string | null
-  resolution: ConflictResolution | null
-}
+// Satir tipi artik elle yazilmiyor; src/types/database.ts'ten geliyor, boylece
+// sema degistiginde derleme zamaninda yakalanir.
+//
+// Uretilen tip conflict_type / status / resolution alanlarini `string` olarak
+// verir; CHECK constraint'lerini ifade edemez. Bu alanlar veritabaninda
+// constraint ile sinirlanmis oldugundan daraltma mapConflict icinde yapilir.
+type ConflictRow = Database['public']['Tables']['address_conflicts']['Row']
 
 export type CreateConflictInput = {
   existingRecord: AddressRecord
@@ -36,23 +22,34 @@ export async function listPending(): Promise<AddressConflict[]> {
   return listByStatus('pending')
 }
 
+// listAll/listByStatus da PostgREST'in 1000 satırlık sessiz sınırına tabidir.
+// Conflict tablosu şu an boş olsa da her içe aktarma yeni kayıt üretebiliyor;
+// ConflictsPage'in çözülmemiş bir çakışmayı hiç göstermemesi kabul edilemez.
+// `created_at` benzersiz olmadığı için `id` ikincil sıralama anahtarı olarak
+// ekleniyor.
 export async function listAll(): Promise<AddressConflict[]> {
-  const { data, error } = await supabase
-    .from('address_conflicts')
-    .select('*')
-    .order('created_at', { ascending: false })
-  if (error) throw error
-  return (data ?? []).map((row) => mapConflict(row as unknown as ConflictRow))
+  const rows = await fetchAllRows<ConflictRow>((from, to) =>
+    supabase
+      .from('address_conflicts')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .order('id')
+      .range(from, to),
+  )
+  return rows.map(mapConflict)
 }
 
 export async function listByStatus(status: ConflictStatus): Promise<AddressConflict[]> {
-  const { data, error } = await supabase
-    .from('address_conflicts')
-    .select('*')
-    .eq('status', status)
-    .order('created_at', { ascending: false })
-  if (error) throw error
-  return (data ?? []).map((row) => mapConflict(row as unknown as ConflictRow))
+  const rows = await fetchAllRows<ConflictRow>((from, to) =>
+    supabase
+      .from('address_conflicts')
+      .select('*')
+      .eq('status', status)
+      .order('created_at', { ascending: false })
+      .order('id')
+      .range(from, to),
+  )
+  return rows.map(mapConflict)
 }
 
 export async function getPendingCount(): Promise<number> {
@@ -131,8 +128,10 @@ async function resolveWithRpc(id: string, action: ConflictResolution): Promise<A
 function mapConflict(row: ConflictRow): AddressConflict {
   return {
     id: row.id,
-    type: row.conflict_type,
-    status: row.status,
+    // address_conflicts_type_check / _status_check / _resolution_check
+    // constraint'leri bu degerleri veritabani seviyesinde garanti eder.
+    type: row.conflict_type as ConflictType,
+    status: row.status as ConflictStatus,
     productId: row.product_id ?? '',
     stockCode: row.stock_code,
     stockName: row.stock_name,
@@ -158,7 +157,7 @@ function mapConflict(row: ConflictRow): AddressConflict {
     },
     createdAt: row.created_at,
     resolvedAt: row.resolved_at ?? undefined,
-    resolution: row.resolution ?? undefined,
+    resolution: (row.resolution as ConflictResolution | null) ?? undefined,
   }
 }
 
