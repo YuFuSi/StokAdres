@@ -264,7 +264,7 @@ export async function createProduct(input: CreateProductInput): Promise<Product>
 // milisaniye önce kendi oluşturduğumuz ürünün id'sini alır. Silme başarısız
 // olursa çağrıyı bozmayız: kullanıcı zaten asıl hatayı görecek, ama sorunu
 // izleyebilmek için loglarız.
-async function rollbackCreatedProduct(productId: string): Promise<void> {
+export async function rollbackCreatedProduct(productId: string): Promise<void> {
   const { error } = await supabase.from('products').delete().eq('id', productId)
   if (error) {
     console.error(
@@ -329,7 +329,27 @@ export async function removeProductBarcodes(productId: string, barcodes: string[
   return product
 }
 
+/**
+ * Bir ürünün barkod kümesini verilen listeyle değiştirir.
+ *
+ * DELETE + INSERT tek transaction DEĞİL. Telafi olmadan, INSERT herhangi bir
+ * nedenle patlarsa (en olası: barkod başka bir üründe kayıtlı → 23505) silinen
+ * eski barkodlar kalıcı olarak kaybolurdu ve kullanıcı yalnızca "barkod
+ * eklenemedi" mesajı görürdü. Bu yüzden eski küme önce okunuyor ve hata
+ * durumunda geri yazılıyor.
+ *
+ * Bugün bu yol yalnızca createProduct üzerinden (yeni ürün, eski barkod yok)
+ * erişilebilir; telafi ileride updateProduct'a barkod düzenleme eklendiğinde
+ * devreye girer.
+ */
 async function replaceProductBarcodes(productId: string, barcodes: string[]): Promise<void> {
+  const { data: existingRows, error: readError } = await supabase
+    .from('product_barcodes')
+    .select('barcode')
+    .eq('product_id', productId)
+  if (readError) throw readError
+  const previousBarcodes = (existingRows ?? []).map((row) => row.barcode)
+
   const { error: deleteError } = await supabase.from('product_barcodes').delete().eq('product_id', productId)
   if (deleteError) throw deleteError
 
@@ -339,7 +359,28 @@ async function replaceProductBarcodes(productId: string, barcodes: string[]): Pr
   const { error: insertError } = await supabase
     .from('product_barcodes')
     .insert(normalizedBarcodes.map((barcode) => ({ product_id: productId, barcode })))
-  if (insertError) throw mapBarcodeError(insertError)
+  if (insertError) {
+    await restoreProductBarcodes(productId, previousBarcodes)
+    throw mapBarcodeError(insertError)
+  }
+}
+
+/**
+ * replaceProductBarcodes'un telafi yolu. Geri yazma da başarısız olursa çağrıyı
+ * bozmayız — kullanıcı zaten asıl hatayı görecek — ama kayıp izlenebilsin diye
+ * loglarız.
+ */
+async function restoreProductBarcodes(productId: string, barcodes: string[]): Promise<void> {
+  if (barcodes.length === 0) return
+  const { error } = await supabase
+    .from('product_barcodes')
+    .insert(barcodes.map((barcode) => ({ product_id: productId, barcode })))
+  if (error) {
+    console.error(
+      `${productId} kimlikli ürünün eski barkodları geri yazılamadı: ${barcodes.join(', ')}`,
+      error,
+    )
+  }
 }
 
 function normalizeBarcodes(barcodes: string[]): string[] {

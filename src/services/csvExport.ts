@@ -57,6 +57,21 @@ export function createAddressRecordsCsv(records: AddressRecord[], products: Prod
     .join('\r\n')
 }
 
+/**
+ * Nesne dizisinden CSV üretir; başlıklar ilk satırın anahtarlarından gelir.
+ *
+ * Tek kaçış kaynağı bilerek `escapeCsvField`: eskiden OperationsPage kendi
+ * `toCsv`'sini taşıyordu ve HER alanı tırnaklıyordu, bu dosya ise yalnızca
+ * gerektiğinde. Aynı veri, hangi yoldan dışa aktarıldığına göre iki farklı
+ * biçimde çıkıyordu.
+ */
+export function createCsvFromRows(rows: Array<Record<string, string | number>>): string {
+  if (rows.length === 0) return ''
+  const headers = Object.keys(rows[0])
+  const body = rows.map((row) => headers.map((header) => String(row[header] ?? '')))
+  return [headers, ...body].map((row) => row.map(escapeCsvField).join(',')).join('\r\n')
+}
+
 export async function exportAddressRecordsCsv(
   records: AddressRecord[],
   products: Product[],

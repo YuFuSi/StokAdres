@@ -35,7 +35,13 @@ app.whenReady().then(() => {
     await fs.writeFile(result.filePath, payload.content, 'utf8')
     return { canceled: false, filePath: result.filePath }
   })
-  ipcMain.handle('save-file', async (_event, payload: { suggestedName: string; content: string; encoding: BufferEncoding }) => {
+  ipcMain.handle('save-file', async (_event, payload: { suggestedName: string; content: string; encoding: unknown }) => {
+    // Encoding renderer'dan geliyor. BufferEncoding olarak tiplemek yalnızca
+    // derleme zamanı bir vaat; IPC sınırında gelen değer her şey olabilir.
+    // Beyaz liste preload'un gerçekten sunduğu iki değerle sınırlı.
+    if (payload.encoding !== 'utf8' && payload.encoding !== 'base64') {
+      throw new Error(`Desteklenmeyen dosya kodlaması: ${String(payload.encoding)}`)
+    }
     const result = await dialog.showSaveDialog({
       title: 'Excel dışa aktar', defaultPath: payload.suggestedName,
       filters: [{ name: 'Excel dosyası', extensions: ['xlsx'] }],

@@ -6,7 +6,7 @@ import type {
 import type { Product } from '../types/product'
 import { supabase } from '../lib/supabase'
 import { fetchAllRows } from '../lib/pagination'
-import { createProduct, DuplicateProductStockCodeError, getProductByStockCode, listProducts } from './productService'
+import { createProduct, DuplicateProductStockCodeError, getProductByStockCode, listProducts, rollbackCreatedProduct } from './productService'
 
 type ProductRelation = {
   stock_code: string
@@ -49,7 +49,7 @@ const ADDRESS_RECORD_SELECT =
 export class AddressRecordService {
   async create(input: CreateAddressRecordInput): Promise<AddressRecord> {
     const product = input.productId
-      ? { id: input.productId }
+      ? { id: input.productId, wasCreated: false }
       : await this.findOrCreateProduct(input)
     const { data, error } = await supabase
       .from('address_records')
@@ -57,7 +57,13 @@ export class AddressRecordService {
       .select(ADDRESS_RECORD_SELECT)
       .single()
 
-    if (error) throw this.mapSupabaseError(error, input.stockCode, input.address)
+    if (error) {
+      // Ürünü bu çağrı oluşturduysa ve adres kaydı yazılamadıysa (en olası:
+      // aynı ürün+adres için zaten aktif kayıt var → 23505), ürün adressiz ve
+      // barkodsuz bir yetim olarak kalırdı. Telafi et.
+      if (product.wasCreated) await rollbackCreatedProduct(product.id)
+      throw this.mapSupabaseError(error, input.stockCode, input.address)
+    }
     return this.mapRecord(data as unknown as AddressRecordRow)
   }
 
@@ -175,18 +181,24 @@ export class AddressRecordService {
     return listProducts()
   }
 
-  private async findOrCreateProduct(input: CreateAddressRecordInput): Promise<{ id: string }> {
+  /**
+   * `wasCreated`, çağıranın telafi yapabilmesi için gerekli: yalnızca bu çağrı
+   * ürünü gerçekten oluşturduysa true döner. Var olan ürün bulunduğunda ya da
+   * yarış sonucu başka bir çağrı oluşturduğunda false kalır — o ürünü silmek
+   * başkasının verisini silmek olurdu.
+   */
+  private async findOrCreateProduct(input: CreateAddressRecordInput): Promise<{ id: string; wasCreated: boolean }> {
     const existing = await getProductByStockCode(input.stockCode)
     if (existing) {
-      return { id: existing.id }
+      return { id: existing.id, wasCreated: false }
     }
     try {
       const created = await createProduct({ stockCode: input.stockCode, stockName: input.stockName })
-      return { id: created.id }
+      return { id: created.id, wasCreated: true }
     } catch (error) {
       if (isUniqueViolation(error)) {
         const product = await getProductByStockCode(input.stockCode)
-        if (product) return { id: product.id }
+        if (product) return { id: product.id, wasCreated: false }
       }
       throw error
     }
