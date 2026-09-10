@@ -1,10 +1,18 @@
 // OTOMATIK URETILDI - ELLE DUZENLEMEYIN
 //
-// Kaynak: Supabase projesi ryuguxxnmccybquqigji, 2026-09-09
+// Kaynak: Supabase projesi ryuguxxnmccybquqigji, 2026-09-10
 // Yeniden uretmek icin: Supabase MCP `generate_typescript_types`
 // veya: supabase gen types typescript --project-id ryuguxxnmccybquqigji
 //
 // Sema degistiginde (yeni migration) bu dosya da yenilenmelidir.
+//
+// 2026-09-10: 20260910000100 ile products_with_metrics view'i ve pg_trgm,
+// 20260910000200 ile dashboard_summary view'i eklendi. View kolonlari nullable
+// gorunur (Postgres view uzerinden NOT NULL garantisi veremez) - productService
+// ve dashboardService bunu ?? ile karsilar.
+//
+// 20260910131409/131448: product_filter_counts view'i ve search_products
+// fonksiyonu eklendi; products_with_metrics'e stock_code_normalized geldi.
 
 export type Json =
   | string
@@ -110,6 +118,13 @@ export type Database = {
             referencedRelation: "products"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "address_conflicts_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products_with_metrics"
+            referencedColumns: ["id"]
+          },
         ]
       }
       address_records: {
@@ -146,6 +161,13 @@ export type Database = {
             columns: ["product_id"]
             isOneToOne: false
             referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "address_records_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products_with_metrics"
             referencedColumns: ["id"]
           },
         ]
@@ -207,6 +229,13 @@ export type Database = {
             referencedRelation: "products"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "audit_logs_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products_with_metrics"
+            referencedColumns: ["id"]
+          },
         ]
       }
       product_barcodes: {
@@ -234,6 +263,13 @@ export type Database = {
             columns: ["product_id"]
             isOneToOne: false
             referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "product_barcodes_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products_with_metrics"
             referencedColumns: ["id"]
           },
         ]
@@ -267,7 +303,37 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      dashboard_summary: {
+        Row: {
+          active_address_records: number | null
+          products_with_address: number | null
+          total_cartons: number | null
+          total_products: number | null
+        }
+        Relationships: []
+      }
+      product_filter_counts: {
+        Row: {
+          all_products: number | null
+          multiple_address: number | null
+          single_address: number | null
+        }
+        Relationships: []
+      }
+      products_with_metrics: {
+        Row: {
+          address_count: number | null
+          created_at: string | null
+          id: string | null
+          is_active: boolean | null
+          stock_code: string | null
+          stock_code_normalized: string | null
+          stock_name: string | null
+          total_cartons: number | null
+          updated_at: string | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
       audit_operation_id: { Args: never; Returns: string }
@@ -359,10 +425,31 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      search_products: {
+        Args: {
+          p_filter?: string
+          p_limit?: number
+          p_offset?: number
+          p_query?: string
+          p_sort?: string
+        }
+        Returns: {
+          address_count: number
+          barcodes: string[]
+          id: string
+          is_active: boolean
+          stock_code: string
+          stock_name: string
+          total_cartons: number
+          total_count: number
+        }[]
+      }
       restore_address_records: {
         Args: { p_operation_id: string; p_records: Json }
         Returns: number
       }
+      show_limit: { Args: never; Returns: number }
+      show_trgm: { Args: { "": string }; Returns: string[] }
       write_audit_log: {
         Args: {
           p_action: string

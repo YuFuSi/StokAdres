@@ -16,12 +16,46 @@ export class OperationImportFileError extends Error {}
 export async function parseOperationImportFile(file: File): Promise<OperationImportRow[]> {
   const lowerName = file.name.toLocaleLowerCase('tr-TR')
   if (!lowerName.endsWith('.csv') && !lowerName.endsWith('.xlsx') && !lowerName.endsWith('.xls')) throw new OperationImportFileError('Dosya okunamadı. Lütfen CSV, XLSX veya XLS dosyası seçin.')
-  const workbook = XLSX.read(lowerName.endsWith('.csv') ? await file.text() : await file.arrayBuffer(), { type: lowerName.endsWith('.csv') ? 'string' : 'array', raw: false })
+  const isText = lowerName.endsWith('.csv')
+  const workbook = XLSX.read(isText ? await file.text() : await file.arrayBuffer(), { type: isText ? 'string' : 'array', raw: false })
+  return rowsFromWorkbook(workbook, 'Dosyada')
+}
+
+/**
+ * Excel'den KOPYALANIP yapıştırılan metni ayrıştırır. Kullanıcının gerçek iş
+ * akışı dosya seçmek değil, CABA çıktısını doğrudan yapıştırmak — bu yüzden
+ * yapıştırma birinci sınıf bir giriş yolu.
+ *
+ * Excel panoya sekmeyle ayrılmış metin koyar; SheetJS bunu CSV ile aynı
+ * çözümleyiciden geçirir, dolayısıyla kolon eşleştirme ve satır şekli dosya
+ * yoluyla birebir aynı kalır.
+ */
+export function parseOperationImportText(text: string): OperationImportRow[] {
+  if (!text.trim()) throw new OperationImportFileError('Yapıştırılan alan boş.')
+  const workbook = XLSX.read(text, { type: 'string', raw: false })
+  return rowsFromWorkbook(workbook, 'Yapıştırılan veride')
+}
+
+function rowsFromWorkbook(workbook: XLSX.WorkBook, subject: string): OperationImportRow[] {
   const sheet = workbook.Sheets[workbook.SheetNames[0] ?? '']
-  if (!sheet) throw new OperationImportFileError('Dosyada okunabilir bir sayfa bulunamadı.')
+  if (!sheet) throw new OperationImportFileError(`${subject} okunabilir bir sayfa bulunamadı.`)
   const matrix = XLSX.utils.sheet_to_json<Array<string | number>>(sheet, { header: 1, defval: '', raw: false })
-  if (matrix.length < 2) throw new OperationImportFileError('Dosyada başlık ve veri satırı bulunamadı.')
-  const columns = mapColumns(matrix[0].map(value => String(value)))
+  if (matrix.length < 2) throw new OperationImportFileError(`${subject} başlık ve veri satırı bulunamadı.`)
+  const headerRow = matrix[0].map(value => String(value))
+  const columns = mapColumns(headerRow)
+
+  // Stok kodu her işlem için zorunlu (bkz. validateOperationRow). Kolon
+  // tanınmazsa `read()` her satır için boş string döndürür ve kullanıcı
+  // "kolon eksik" yerine yüzlerce "Stok kodu boş" satırı görür — kök sebep
+  // gizlenir. Bunun yerine hangi başlıkların bulunduğunu söyleyerek duruyoruz.
+  if (columns.stockCode === undefined) {
+    const found = headerRow.map(header => header.trim()).filter(Boolean)
+    throw new OperationImportFileError(
+      `${subject} "Stok Kodu" kolonu bulunamadı. ` +
+      (found.length ? `Bulunan başlıklar: ${found.join(', ')}. ` : 'Başlık satırı boş görünüyor. ') +
+      `Kabul edilen adlar: ${aliases.stockCode.join(', ')}.`,
+    )
+  }
   return matrix.slice(1).map((cells, index) => {
     const read = (key: keyof typeof aliases) => String(cells[columns[key] ?? -1] ?? '').trim()
     const cartonValue = read('cabaQuantity')

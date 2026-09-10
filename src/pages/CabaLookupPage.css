@@ -1,0 +1,94 @@
+/* CABA ile Adres Bul — mevcut tasarim dili korunarak.
+   Adres, her satirin gorsel olarak en baskin ogesi: kullanicinin tek sorusu
+   "bu stok nerede?" */
+
+.caba-input { margin-top: 24px; }
+
+.caba-paste { display: block; }
+.caba-paste__label { display: flex; align-items: center; gap: 7px; margin-bottom: 8px; color: var(--muted); font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+.caba-paste__label svg { color: var(--teal); }
+.caba-paste textarea {
+  width: 100%; padding: 14px 16px; resize: vertical;
+  color: var(--ink); background: var(--surface);
+  border: 1px solid var(--line); border-radius: 6px;
+  font: 13px ui-monospace, SFMono-Regular, Menlo, monospace; line-height: 1.55;
+}
+.caba-paste textarea:focus { outline: 0; border-color: var(--teal); box-shadow: 0 0 0 3px rgba(8,127,123,.12); }
+.caba-paste textarea::placeholder { color: var(--muted); opacity: .7; }
+
+.caba-actions { display: flex; align-items: center; gap: 12px; margin-top: 16px; }
+.caba-actions__divider { color: var(--muted); font-size: 12px; }
+.caba-actions .button { display: inline-flex; align-items: center; gap: 7px; }
+.caba-actions .button:disabled { opacity: .5; cursor: not-allowed; }
+
+.caba-error { margin: 14px 0 0; color: #b4483e; font-size: 13px; }
+.caba-hint { display: flex; align-items: flex-start; gap: 8px; margin: 18px 0 0; padding-top: 16px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; line-height: 1.6; }
+.caba-hint svg { flex: 0 0 auto; margin-top: 2px; color: var(--teal); }
+
+/* --- sonuclar --- */
+.caba-results__header { align-items: flex-start; }
+.caba-results__actions { display: flex; gap: 8px; }
+.caba-results__actions .button { display: inline-flex; align-items: center; gap: 6px; }
+
+.caba-summary { display: flex; gap: 0; margin-top: 22px; background: var(--surface); border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.caba-summary > div { flex: 1; padding: 15px 20px; border-right: 1px solid var(--line); }
+.caba-summary > div:last-child { border-right: 0; }
+.caba-summary strong { display: block; font: 600 24px 'Space Grotesk', sans-serif; }
+.caba-summary span { display: block; margin-top: 3px; color: var(--muted); font-size: 11px; }
+.caba-summary__warn strong { color: #9b6e1c; }
+
+.caba-note { margin: 14px 0 0; color: var(--muted); font-size: 12px; }
+
+.caba-results, .caba-misses { margin-top: 22px; }
+.caba-table { width: 100%; border-collapse: collapse; background: var(--surface); border: 1px solid var(--line); border-radius: 6px; overflow: hidden; font-size: 13px; }
+.caba-table th { height: 40px; padding: 0 16px; color: var(--muted); background: var(--surface-muted); font-size: 10px; font-weight: 700; letter-spacing: .1em; text-align: left; text-transform: uppercase; }
+.caba-table td { padding: 11px 16px; color: var(--ink); border-top: 1px solid var(--line); vertical-align: middle; }
+/* Ayni urunun ikinci ve sonraki adresleri: ust cizgi silinir, satirlar tek blok
+   gibi okunur. */
+.caba-row:not(.caba-row--first) td { border-top: 0; padding-top: 0; }
+.caba-row--first td { padding-top: 13px; }
+
+/* Adres birincil bilgi: en buyuk, monospace, tam kontrastli. */
+.caba-address { color: var(--ink); font: 600 19px ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: -.01em; white-space: nowrap; }
+.caba-table__address { width: 1%; }
+.caba-carton { color: var(--muted); font-size: 13px; white-space: nowrap; }
+.caba-quantity { color: var(--muted); font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
+
+.caba-misses h2 { display: flex; align-items: center; gap: 9px; margin: 0 0 4px; font-size: 15px; }
+.caba-misses h2 span { padding: 2px 8px; color: #9b6e1c; background: #fff4dc; border-radius: 999px; font-size: 11px; font-weight: 700; }
+.caba-misses__hint { margin: 0 0 14px; color: var(--muted); font-size: 12px; }
+.caba-table--misses td { color: var(--muted); }
+.caba-table--misses td strong { color: var(--ink); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+
+@media (max-width: 700px) {
+  .caba-summary { flex-direction: column; }
+  .caba-summary > div { border-right: 0; border-bottom: 1px solid var(--line); }
+  .caba-actions { flex-wrap: wrap; }
+}
+
+/* --- YAZDIRMA ---
+   Depo calisani bu ciktiyi eline alip rafa gidiyor: sadece liste basilir. */
+@media print {
+  /* Sidebar, ust bar ve butonlar kagida basilmaz. */
+  .app-sidebar, .application-bar, .caba-results__actions, .caba-input { display: none !important; }
+  .app-shell { display: block; }
+  .operations-page { width: auto; padding: 0; }
+
+  .caba-page { color: #000; }
+  .caba-summary { border-color: #999; }
+  .caba-summary strong { font-size: 18px; }
+
+  .caba-table { border-color: #999; font-size: 12px; }
+  .caba-table th { height: auto; padding: 6px 10px; color: #000; background: #eee; border-bottom: 1px solid #999; }
+  .caba-table td { padding: 7px 10px; color: #000; border-top-color: #ddd; }
+  .caba-address { font-size: 15px; }
+
+  /* Bir urunun adresleri sayfa sonunda ikiye bolunmesin. */
+  .caba-row--first, .caba-misses tr { break-inside: avoid; }
+  .caba-misses { break-before: auto; }
+  .caba-misses h2 span { border: 1px solid #999; background: transparent; color: #000; }
+
+  h1 { font-size: 20px; }
+  .page-header__description { color: #444; font-size: 11px; }
+  .intro__eyebrow, .caba-note, .caba-misses__hint { color: #444; }
+}

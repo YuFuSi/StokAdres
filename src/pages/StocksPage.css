@@ -119,3 +119,12 @@
 .stocks-modal { width: min(500px, 100%); padding: 26px; border-radius: 8px; box-shadow: var(--shadow-md); }
 .stocks-create-form { gap: 15px; padding-top: 19px; }.stocks-create-form .record-actions { justify-content: flex-end; margin-top: 6px; }
 .stocks-modal__description { max-width: 360px; margin: 7px 0 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
+
+/* Faz 1.1 — sunucu tarafi sayfalama */
+.stocks-pagination { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:14px 18px; border-top:1px solid var(--line); }
+.stocks-pagination span { color:var(--muted); font-size:12px; }
+.stocks-pagination .button { display:inline-flex; align-items:center; gap:6px; }
+.stocks-pagination .button:disabled { opacity:.45; cursor:not-allowed; }
+/* Sayfa degisirken tablo yerinde kalir, sadece soner - icerik zipladigi icin
+   kaydirma konumunun kaybolmasini onler. */
+.stocks-table-wrap--loading { opacity:.55; transition:opacity 120ms ease; pointer-events:none; }

@@ -6,7 +6,7 @@ import type {
 import type { Product } from '../types/product'
 import { supabase } from '../lib/supabase'
 import { fetchAllRows } from '../lib/pagination'
-import { createProduct, getProductByStockCode, listProducts } from './productService'
+import { createProduct, DuplicateProductStockCodeError, getProductByStockCode, listProducts } from './productService'
 
 type ProductRelation = {
   stock_code: string
@@ -51,6 +51,14 @@ export class AddressRecordNotFoundError extends Error {
   }
 }
 
+/**
+ * Adres kaydı + ilişkili ürün bilgisi. Altı ayrı sorguda aynı şekil kullanılıyor.
+ * `as const` şart: supabase-js dönüş tipini select ifadesinin literal tipinden
+ * çözüyor, geniş `string` tipiyle çözümleme başarısız oluyor.
+ */
+const ADDRESS_RECORD_SELECT =
+  'id, product_id, address, carton_count, is_active, created_at, updated_at, products!inner(stock_code, stock_name)' as const
+
 export class AddressRecordService {
   async create(input: CreateAddressRecordInput): Promise<AddressRecord> {
     const product = input.productId
@@ -59,7 +67,7 @@ export class AddressRecordService {
     const { data, error } = await supabase
       .from('address_records')
       .insert({ product_id: product.id, address: input.address, carton_count: input.cartonCount, is_active: input.isActive ?? true })
-      .select('id, product_id, address, carton_count, is_active, created_at, updated_at, products!inner(stock_code, stock_name)')
+      .select(ADDRESS_RECORD_SELECT)
       .single()
 
     if (error) throw this.mapSupabaseError(error, input.stockCode, input.address)
@@ -69,26 +77,31 @@ export class AddressRecordService {
   async getById(id: string): Promise<AddressRecord | undefined> {
     const { data, error } = await supabase
       .from('address_records')
-      .select('id, product_id, address, carton_count, is_active, created_at, updated_at, products!inner(stock_code, stock_name)')
+      .select(ADDRESS_RECORD_SELECT)
       .eq('id', id)
       .maybeSingle()
     if (error) throw error
     return data ? this.mapRecord(data as unknown as AddressRecordRow) : undefined
   }
 
+  // Bu dört metot eskiden list() ile TÜM adres tablosunu çekip istemcide
+  // filtreliyordu. Tek bir ürünün adreslerini görmek için tüm tabloyu indirmek,
+  // ürün detay ekranını 100k ölçeğinde kullanılamaz hale getirirdi.
+  // Artık filtre veritabanında; address_records.product_id index'li
+  // (idx_address_records_product_id).
+
   async getActiveByStockCode(stockCode: string): Promise<AddressRecord[]> {
-    const records = await this.list()
-    return records.filter((record) => record.stockCode === stockCode && record.isActive)
+    // Gömülü kaynağa filtre: products!inner sayesinde stok koduna göre süzme
+    // veritabanında yapılır, ilişkili ürünü olmayan satırlar zaten elenir.
+    return this.queryRecords({ stockCode, activeOnly: true })
   }
 
   async getByProductId(productId: string): Promise<AddressRecord[]> {
-    const records = await this.list()
-    return records.filter((record) => record.productId === productId)
+    return this.queryRecords({ productId })
   }
 
   async getActiveByProductId(productId: string): Promise<AddressRecord[]> {
-    const records = await this.getByProductId(productId)
-    return records.filter((record) => record.isActive)
+    return this.queryRecords({ productId, activeOnly: true })
   }
 
   async getByStockCode(stockCode: string): Promise<AddressRecord | undefined> {
@@ -112,7 +125,7 @@ export class AddressRecordService {
       .from('address_records')
       .update(updates)
       .eq('id', id)
-      .select('id, product_id, address, carton_count, is_active, created_at, updated_at, products!inner(stock_code, stock_name)')
+      .select(ADDRESS_RECORD_SELECT)
       .single()
     if (error) throw this.mapSupabaseError(error, next.stockCode, next.address)
     return this.mapRecord(data as unknown as AddressRecordRow)
@@ -167,12 +180,28 @@ export class AddressRecordService {
     const rows = await fetchAllRows<AddressRecordRow>((from, to) =>
       supabase
         .from('address_records')
-        .select('id, product_id, address, carton_count, is_active, created_at, updated_at, products!inner(stock_code, stock_name)')
+        .select(ADDRESS_RECORD_SELECT)
         .order('created_at', { ascending: true })
         .order('id')
         .range(from, to),
     )
     return rows.map((record) => this.mapRecord(record))
+  }
+
+  /**
+   * Genel Bakış'taki "son eklenenler" listesi için yalnızca son N kaydı çeker.
+   * Eskiden bu, list() ile tüm tabloyu çekip istemcide sıralayarak yapılıyordu;
+   * 100k ölçeğinde beş satır göstermek için tüm tabloyu indirmek anlamsız.
+   */
+  async listRecent(limit: number): Promise<AddressRecord[]> {
+    const { data, error } = await supabase
+      .from('address_records')
+      .select(ADDRESS_RECORD_SELECT)
+      .order('created_at', { ascending: false })
+      .order('id', { ascending: false })
+      .limit(limit)
+    if (error) throw error
+    return (data ?? []).map((record) => this.mapRecord(record as unknown as AddressRecordRow))
   }
 
   async listProducts(): Promise<Product[]> {
@@ -194,6 +223,26 @@ export class AddressRecordService {
       }
       throw error
     }
+  }
+
+  /**
+   * Filtreli adres sorguları için ortak gövde. Sıralama her yerde aynı
+   * (eklenme sırası) ve `id` ikincil anahtar olarak veriliyor ki eşit
+   * `created_at` değerlerinde sonuç sırası deterministik kalsın.
+   */
+  private async queryRecords(filters: {
+    productId?: string
+    stockCode?: string
+    activeOnly?: boolean
+  }): Promise<AddressRecord[]> {
+    let request = supabase.from('address_records').select(ADDRESS_RECORD_SELECT)
+    if (filters.productId) request = request.eq('product_id', filters.productId)
+    if (filters.stockCode) request = request.eq('products.stock_code', filters.stockCode)
+    if (filters.activeOnly) request = request.eq('is_active', true)
+
+    const { data, error } = await request.order('created_at').order('id')
+    if (error) throw error
+    return (data ?? []).map((record) => this.mapRecord(record as unknown as AddressRecordRow))
   }
 
   private mapRecord(record: AddressRecordRow): AddressRecord {
@@ -218,6 +267,11 @@ export class AddressRecordService {
   }
 }
 
+// createProduct artık stok kodu çakışmasını DuplicateProductStockCodeError'a
+// eşliyor; o hatanın `code` alanı yok. Yalnızca ham 23505'e bakmak, iki istek
+// aynı stok kodunu aynı anda oluşturmaya çalıştığındaki kurtarma yolunu sessizce
+// devre dışı bırakırdı. Her iki biçim de burada tanınmalı.
 function isUniqueViolation(error: unknown): boolean {
+  if (error instanceof DuplicateProductStockCodeError) return true
   return Boolean(error && typeof error === 'object' && 'code' in error && error.code === '23505')
 }

@@ -13,7 +13,9 @@
     "build:win": "npm run build && electron-builder --win nsis",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "preview": "vite preview",
-    "start": "npm run build && electron ."
+    "start": "npm run build && electron .",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.115.0",
@@ -31,6 +33,7 @@
     "electron-builder": "^26.15.3",
     "typescript": "latest",
     "vite": "latest",
+    "vitest": "^5.0.0",
     "wait-on": "^8.0.3"
   },
   "build": {

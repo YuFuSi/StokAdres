@@ -1,9 +1,16 @@
-import { useEffect, useState } from 'react'
-import { Plus, Search, X } from 'lucide-react'
-import { addressRecordService, getProductsWithAddressRecords } from '../data/localData'
-import { filterAndSortProducts, getProductMetrics, type ProductFilter, type ProductSort } from '../services/productListing'
-import { createProduct, DuplicateProductBarcodeError, DuplicateProductStockCodeError, listProducts } from '../services/productService'
-import type { Product } from '../types/product'
+import { useEffect, useRef, useState } from 'react'
+import { ChevronLeft, ChevronRight, Plus, Search, X } from 'lucide-react'
+import {
+  createProduct,
+  DuplicateProductBarcodeError,
+  DuplicateProductStockCodeError,
+  getProductFilterCounts,
+  PRODUCT_PAGE_SIZE,
+  queryProducts,
+  type ProductListFilter,
+  type ProductListItem,
+  type ProductListSort,
+} from '../services/productService'
 import './StocksPage.css'
 
 type StocksPageProps = {
@@ -11,12 +18,17 @@ type StocksPageProps = {
   onProductSelect: (productId: string) => void
 }
 
+const SEARCH_DEBOUNCE_MS = 250
+
 export function StocksPage({ onBackToDashboard, onProductSelect }: StocksPageProps) {
-  const [products, setProducts] = useState<Product[]>([])
-  const [records, setRecords] = useState<Awaited<ReturnType<typeof addressRecordService.list>>>([])
+  const [products, setProducts] = useState<ProductListItem[]>([])
+  const [total, setTotal] = useState(0)
+  const [counts, setCounts] = useState({ all: 0, single: 0, multiple: 0 })
+  const [page, setPage] = useState(0)
   const [query, setQuery] = useState('')
-  const [filter, setFilter] = useState<ProductFilter>('all')
-  const [sort, setSort] = useState<ProductSort>('relevance')
+  const [debouncedQuery, setDebouncedQuery] = useState('')
+  const [filter, setFilter] = useState<ProductListFilter>('all')
+  const [sort, setSort] = useState<ProductListSort>('stock-name')
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState('')
   const [isCreateFormOpen, setIsCreateFormOpen] = useState(false)
@@ -27,26 +39,45 @@ export function StocksPage({ onBackToDashboard, onProductSelect }: StocksPagePro
   const [formError, setFormError] = useState('')
   const [isCreating, setIsCreating] = useState(false)
 
-  const loadStocks = async () => {
-    const [nextProducts, nextRecords] = await Promise.all([listProducts(), addressRecordService.list()])
-    setProducts(nextProducts)
-    setRecords(nextRecords)
-  }
-
+  // Arama her tuş vuruşunda sunucuya gitmemeli. 100k satırda sorgunun kendisi
+  // ucuz (trigram index), ama gereksiz istek yağmuru anlamsız.
   useEffect(() => {
-    let isMounted = true
+    const timer = window.setTimeout(() => setDebouncedQuery(query.trim()), SEARCH_DEBOUNCE_MS)
+    return () => window.clearTimeout(timer)
+  }, [query])
+
+  // Arama/filtre/sıralama değişince ilk sayfaya dön; yoksa 3. sayfada dururken
+  // yeni sonuç kümesi 1 sayfaysa boş ekran görünürdü.
+  useEffect(() => { setPage(0) }, [debouncedQuery, filter, sort])
+
+  // Sayfayı çeken tek etki. Bir önceki isteğin geç dönüp yeni sonucun üstüne
+  // yazmasını engellemek için istek sırası takip ediliyor.
+  const requestRef = useRef(0)
+  useEffect(() => {
+    const requestId = ++requestRef.current
     setIsLoading(true)
-    loadStocks()
-      .then(() => {
-        if (!isMounted) return
+    queryProducts({ query: debouncedQuery, filter, sort, page })
+      .then((result) => {
+        if (requestRef.current !== requestId) return
+        setProducts(result.items)
+        setTotal(result.total)
+        setError('')
       })
       .catch((reason: unknown) => {
         console.error(reason)
-        if (isMounted) setError('Stoklar yüklenirken bir sorun oluştu.')
+        if (requestRef.current === requestId) setError('Stoklar yüklenirken bir sorun oluştu.')
       })
-      .finally(() => { if (isMounted) setIsLoading(false) })
-    return () => { isMounted = false }
-  }, [])
+      .finally(() => { if (requestRef.current === requestId) setIsLoading(false) })
+  }, [debouncedQuery, filter, sort, page])
+
+  // Filtre çiplerindeki sayılar aramadan bağımsız; sayfa değiştikçe yeniden
+  // çekmeye gerek yok. Stok eklendiğinde reloadCounts ile tazeleniyor.
+  const reloadCounts = () => {
+    getProductFilterCounts()
+      .then(setCounts)
+      .catch((reason: unknown) => console.error(reason))
+  }
+  useEffect(reloadCounts, [])
 
   useEffect(() => {
     if (!isCreateFormOpen) return
@@ -110,7 +141,7 @@ export function StocksPage({ onBackToDashboard, onProductSelect }: StocksPagePro
     setFormError('')
     try {
       const product = await createProduct({ stockCode: trimmedStockCode, stockName: trimmedStockName, barcodes: nextBarcodes })
-      await loadStocks()
+      reloadCounts()
       setIsCreateFormOpen(false)
       onProductSelect(product.id)
     } catch (reason: unknown) {
@@ -125,24 +156,9 @@ export function StocksPage({ onBackToDashboard, onProductSelect }: StocksPagePro
     }
   }
 
-  const productsWithRecords = getProductsWithAddressRecords(records, products)
-  const normalizedQuery = query.trim().toLocaleLowerCase('tr-TR')
-  const searchedProducts = normalizedQuery
-    ? productsWithRecords.filter((product) => [product.stockCode, product.stockName, ...product.barcodes]
-      .some((value) => value.toLocaleLowerCase('tr-TR').includes(normalizedQuery)))
-    : productsWithRecords
-  const visibleProducts = filterAndSortProducts(
-    searchedProducts,
-    records,
-    filter,
-    sort === 'relevance' ? 'stock-name' : sort,
-    'asc',
-  )
-  const counts = {
-    all: productsWithRecords.length,
-    single: productsWithRecords.filter((product) => getProductMetrics(product, records).activeAddressCount === 1).length,
-    multiple: productsWithRecords.filter((product) => getProductMetrics(product, records).hasMultipleAddresses).length,
-  }
+  const pageCount = Math.max(1, Math.ceil(total / PRODUCT_PAGE_SIZE))
+  const rangeStart = total === 0 ? 0 : page * PRODUCT_PAGE_SIZE + 1
+  const rangeEnd = Math.min(total, (page + 1) * PRODUCT_PAGE_SIZE)
 
   return (
     <main className="stocks-page">
@@ -169,8 +185,8 @@ export function StocksPage({ onBackToDashboard, onProductSelect }: StocksPagePro
           <button className={filter === 'multiple-addresses' ? 'stocks-filter stocks-filter--active' : 'stocks-filter'} type="button" onClick={() => setFilter('multiple-addresses')}>Çoklu adres <strong>{counts.multiple}</strong></button>
         </div>
         <label className="stocks-sort">Sırala
-          <select value={sort} onChange={(event) => setSort(event.target.value as ProductSort)}>
-            <option value="relevance">Stok adı</option>
+          <select value={sort} onChange={(event) => setSort(event.target.value as ProductListSort)}>
+            <option value="stock-name">Stok adı</option>
             <option value="stock-code">Stok kodu</option>
             <option value="address-count">Adres sayısı</option>
             <option value="carton-count">Koli sayısı</option>
@@ -178,30 +194,42 @@ export function StocksPage({ onBackToDashboard, onProductSelect }: StocksPagePro
         </label>
       </section>
 
-      {isLoading && <p className="stocks-state" role="status">Stoklar yükleniyor...</p>}
-      {!isLoading && error && <div className="stocks-state stocks-state--error" role="alert"><p>{error}</p><button className="button button--secondary" type="button" onClick={() => { setError(''); setIsLoading(true); loadStocks().catch(() => setError('Stoklar yüklenirken bir sorun oluştu.')).finally(() => setIsLoading(false)) }}>Tekrar Dene</button></div>}
-      {!isLoading && !error && (
+      {error && <div className="stocks-state stocks-state--error" role="alert"><p>{error}</p><button className="button button--secondary" type="button" onClick={() => setPage((current) => current)}>Tekrar Dene</button></div>}
+      {!error && (
         <div className="stocks-layout stocks-layout--list-only">
           <section className="stocks-table-panel" aria-label="Stok listesi">
-            <div className="stocks-table-caption"><span>{visibleProducts.length} stok</span><span>Ürün bazında görünüm · satıra tıklayarak açın</span></div>
-            {productsWithRecords.length === 0 ? <div className="stocks-state"><p>Henüz stok bulunmuyor.</p><button className="button button--primary" type="button" onClick={openCreateForm}>+ Stok Ekle</button></div> : visibleProducts.length === 0 ? <p className="stocks-state">Aramanızla eşleşen stok bulunamadı.</p> : (
-              <div className="stocks-table-wrap">
-                <table className="stocks-table">
-                  <thead><tr><th>Stok kodu</th><th>Stok</th><th>Barkod</th><th>Adres</th><th>Koli</th><th>Durum</th><th aria-label="İşlemler" /></tr></thead>
-                  <tbody>{visibleProducts.map((product) => {
-                    const metrics = getProductMetrics(product, records)
-                    return <tr className="stocks-row" key={product.id} onClick={() => onProductSelect(product.id)}>
-                      <td><strong>{product.stockCode}</strong></td>
-                      <td>{product.stockName}</td>
-                      <td className="barcode-summary">{product.barcodes.length ? <><span>{product.barcodes[0]}</span>{product.barcodes.length > 1 && <small>+{product.barcodes.length - 1} barkod</small>}</> : <span>—</span>}</td>
-                      <td>{metrics.activeAddressCount ? `${metrics.activeAddressCount} adres` : 'Adres yok'}</td>
-                      <td>{metrics.totalCartons}</td>
-                      <td><span className="stock-status">{product.isActive === false ? 'Pasif' : 'Aktif'}</span></td>
-                      <td><button className="table-action" type="button" onClick={(event) => { event.stopPropagation(); onProductSelect(product.id) }}>Görüntüle</button></td>
-                    </tr>
-                  })}</tbody>
-                </table>
-              </div>
+            <div className="stocks-table-caption">
+              <span>{total} stok{total > 0 && <> · {rangeStart}-{rangeEnd} arası</>}</span>
+              <span>Ürün bazında görünüm · satıra tıklayarak açın</span>
+            </div>
+            {isLoading && products.length === 0 ? <p className="stocks-state" role="status">Stoklar yükleniyor...</p>
+              : total === 0 && debouncedQuery ? <p className="stocks-state">Aramanızla eşleşen stok bulunamadı.</p>
+              : total === 0 ? <div className="stocks-state"><p>Henüz stok bulunmuyor.</p><button className="button button--primary" type="button" onClick={openCreateForm}>+ Stok Ekle</button></div> : (
+              <>
+                <div className={isLoading ? 'stocks-table-wrap stocks-table-wrap--loading' : 'stocks-table-wrap'}>
+                  <table className="stocks-table">
+                    <thead><tr><th>Stok kodu</th><th>Stok</th><th>Barkod</th><th>Adres</th><th>Koli</th><th>Durum</th><th aria-label="İşlemler" /></tr></thead>
+                    <tbody>{products.map((product) => (
+                      <tr className="stocks-row" key={product.id} onClick={() => onProductSelect(product.id)}>
+                        <td><strong>{product.stockCode}</strong></td>
+                        <td>{product.stockName}</td>
+                        <td className="barcode-summary">{product.barcodes.length ? <><span>{product.barcodes[0]}</span>{product.barcodes.length > 1 && <small>+{product.barcodes.length - 1} barkod</small>}</> : <span>—</span>}</td>
+                        <td>{product.addressCount ? `${product.addressCount} adres` : 'Adres yok'}</td>
+                        <td>{product.totalCartons}</td>
+                        <td><span className="stock-status">{product.isActive === false ? 'Pasif' : 'Aktif'}</span></td>
+                        <td><button className="table-action" type="button" onClick={(event) => { event.stopPropagation(); onProductSelect(product.id) }}>Görüntüle</button></td>
+                      </tr>
+                    ))}</tbody>
+                  </table>
+                </div>
+                {pageCount > 1 && (
+                  <div className="stocks-pagination">
+                    <button className="button button--secondary" type="button" disabled={page === 0 || isLoading} onClick={() => setPage((current) => Math.max(0, current - 1))}><ChevronLeft size={15} /> Önceki</button>
+                    <span>Sayfa {page + 1} / {pageCount}</span>
+                    <button className="button button--secondary" type="button" disabled={page + 1 >= pageCount || isLoading} onClick={() => setPage((current) => current + 1)}>Sonraki <ChevronRight size={15} /></button>
+                  </div>
+                )}
+              </>
             )}
           </section>
         </div>
@@ -228,4 +256,3 @@ export function StocksPage({ onBackToDashboard, onProductSelect }: StocksPagePro
     </main>
   )
 }
-
