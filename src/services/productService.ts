@@ -50,7 +50,6 @@ export async function listProducts(): Promise<Product[]> {
         .order('stock_code')
         .order('id')
         .range(from, to),
-    mapProductCreateError,
   )
   return rows.map(mapProduct)
 }
@@ -75,18 +74,49 @@ export async function getProductByStockCode(stockCode: string): Promise<Product 
   return data ? mapProduct(data as unknown as ProductRow) : undefined
 }
 
+// Ürün oluşturma iki ayrı yazma isteğinden oluşur: önce products'a INSERT,
+// sonra product_barcodes'a INSERT. PostgREST her isteği kendi transaction'ında
+// commit ettiği için bunları tek bir atomik işlemde toplayamıyoruz.
+//
+// Barkod adımı patladığında (en olası sebep: barkod başka bir üründe kayıtlı,
+// product_barcodes.barcode global UNIQUE) ürün çoktan yazılmış oluyordu.
+// Kullanıcı hata mesajı görüyor ama depoda barkodsuz, "oluşmadı" sandığı bir
+// ürün kalıyordu. Telafi ederek çözüyoruz: yeni oluşturduğumuz ürünü siliyor,
+// çağrı öncesi duruma dönüyoruz. products -> product_barcodes FK'si
+// ON DELETE CASCADE olduğu için araya girmiş barkod satırları da temizlenir.
 export async function createProduct(input: CreateProductInput): Promise<Product> {
   const { data, error } = await supabase
     .from('products')
     .insert({ stock_code: input.stockCode, stock_name: input.stockName })
     .select('id')
     .single()
-  if (error) throw error
+  if (error) throw mapStockCodeError(error)
   const productId = (data as { id: string }).id
-  await replaceProductBarcodes(productId, input.barcodes ?? [])
+
+  try {
+    await replaceProductBarcodes(productId, input.barcodes ?? [])
+  } catch (barcodeError) {
+    await rollbackCreatedProduct(productId)
+    throw barcodeError
+  }
+
   const product = await getProductById(productId)
   if (!product) throw new ProductNotFoundError(productId)
   return product
+}
+
+// Yalnızca createProduct'ın telafi yolundan çağrılır ve yalnızca birkaç
+// milisaniye önce kendi oluşturduğumuz ürünün id'sini alır. Silme başarısız
+// olursa çağrıyı bozmayız: kullanıcı zaten asıl hatayı görecek, ama sorunu
+// izleyebilmek için loglarız.
+async function rollbackCreatedProduct(productId: string): Promise<void> {
+  const { error } = await supabase.from('products').delete().eq('id', productId)
+  if (error) {
+    console.error(
+      `Ürün oluşturma geri alınamadı; ${productId} kimlikli barkodsuz ürün kalmış olabilir.`,
+      error,
+    )
+  }
 }
 
 export async function updateProduct(id: string, input: UpdateProductInput): Promise<Product> {
@@ -103,7 +133,10 @@ export async function updateProduct(id: string, input: UpdateProductInput): Prom
       .eq('id', id)
       .select('id')
       .maybeSingle()
-    if (error) throw error
+    // stock_code UNIQUE olduğu için mevcut bir koda güncelleme de 23505 verir;
+    // ProductDetailPage stok kodu düzenlemeye izin veriyor, bu yüzden create
+    // ile aynı mesaja eşlenmeli.
+    if (error) throw mapStockCodeError(error)
     if (!data) throw new ProductNotFoundError(id)
   }
 
@@ -165,7 +198,14 @@ function mapBarcodeError(error: { code?: string; message: string }): Error {
   return new Error(error.message)
 }
 
-function mapProductCreateError(error: { code?: string; message: string }): Error {
+// products.stock_code UNIQUE ihlalini kullanıcıya gösterilebilir hataya çevirir.
+// Eskiden bu mapper yanlışlıkla listProducts'a bağlıydı; orada bir UNIQUE ihlali
+// asla oluşamayacağı için hiç çalışmıyor, buna karşılık ağ/izin hatalarını
+// "stok kodu zaten kayıtlı" diye yanlış raporlama riski taşıyordu. Asıl ihtiyacı
+// olan createProduct ve updateProduct ham hata fırlatıyordu; bu yüzden
+// StocksPage'in `instanceof DuplicateProductStockCodeError` kontrolü hiçbir
+// zaman tutmuyor, kullanıcı hep genel mesajı görüyordu.
+function mapStockCodeError(error: { code?: string; message: string }): Error {
   if (error.code === '23505' || error.message.toLowerCase().includes('unique')) {
     return new DuplicateProductStockCodeError()
   }

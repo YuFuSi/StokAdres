@@ -6,7 +6,7 @@ import type {
 import type { Product } from '../types/product'
 import { supabase } from '../lib/supabase'
 import { fetchAllRows } from '../lib/pagination'
-import { createProduct, getProductByStockCode, listProducts } from './productService'
+import { createProduct, DuplicateProductStockCodeError, getProductByStockCode, listProducts } from './productService'
 
 type ProductRelation = {
   stock_code: string
@@ -218,6 +218,11 @@ export class AddressRecordService {
   }
 }
 
+// createProduct artık stok kodu çakışmasını DuplicateProductStockCodeError'a
+// eşliyor; o hatanın `code` alanı yok. Yalnızca ham 23505'e bakmak, iki istek
+// aynı stok kodunu aynı anda oluşturmaya çalıştığındaki kurtarma yolunu sessizce
+// devre dışı bırakırdı. Her iki biçim de burada tanınmalı.
 function isUniqueViolation(error: unknown): boolean {
+  if (error instanceof DuplicateProductStockCodeError) return true
   return Boolean(error && typeof error === 'object' && 'code' in error && error.code === '23505')
 }

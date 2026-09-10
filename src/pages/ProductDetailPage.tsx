@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { ArrowLeft, Copy, MapPin, Plus, Trash2 } from 'lucide-react'
 import { addressRecordService } from '../data/localData'
 import { DuplicateActiveAddressError } from '../services/addressRecordService'
-import { addProductBarcodes, DuplicateProductBarcodeError, getProductById, removeProductBarcodes, updateProduct } from '../services/productService'
+import { addProductBarcodes, DuplicateProductBarcodeError, DuplicateProductStockCodeError, getProductById, removeProductBarcodes, updateProduct } from '../services/productService'
 import { getProductMetrics } from '../services/productListing'
 import { copyToClipboard } from '../services/clipboard'
 import type { AddressRecord } from '../types/addressRecord'
@@ -113,7 +113,9 @@ export function ProductDetailPage({ productId, onBack, onAddressSelect }: Produc
       await loadProduct()
     } catch (reason: unknown) {
       console.error(reason)
-      setSaveError('Ürün bilgileri güncellenemedi. Lütfen tekrar deneyin.')
+      setSaveError(reason instanceof DuplicateProductStockCodeError
+        ? 'Bu stok kodu zaten kayıtlı. Farklı bir stok kodu girin.'
+        : 'Ürün bilgileri güncellenemedi. Lütfen tekrar deneyin.')
     } finally {
       setIsSaving(false)
     }
