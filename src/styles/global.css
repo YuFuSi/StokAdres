@@ -342,3 +342,17 @@ body { background: var(--page); }
 .command-palette__state { margin: 0; padding: 18px 10px; color: var(--muted); font-size: 12px; text-align: center; }
 .command-palette__state--hint { color: var(--muted); opacity: .8; }
 .command-palette__state--error { color: var(--danger); }
+
+/* Tıklanabilir metrik. .dashboard-metric zaten border/background sıfırlı, ama
+   <button> varsayılanları (font, hizalama, imleç) ayrıca sıfırlanmalı ki
+   komşu <div> metriklerle birebir aynı görünsün. */
+.dashboard-metric--link { width:100%; font:inherit; color:inherit; text-align:left; cursor:pointer; transition:background var(--transition); }
+.dashboard-metric--link:hover { background:var(--surface-muted); }
+.dashboard-metric--link:hover .dashboard-metric__top svg { transform:translateX(2px); }
+.dashboard-metric--link .dashboard-metric__top svg { color:var(--teal); transition:transform var(--transition); }
+.dashboard-metric--link:focus-visible { outline:3px solid rgba(8,127,123,.25); outline-offset:-3px; }
+
+/* Bağlantı göstergesi. Nokta artık koşulsuz yeşil değil; gerçek duruma göre. */
+.status-dot--checking { background:#9aa29f; }
+.status-dot--online { background:#46a78b; }
+.status-dot--offline { background:#d4655a; }

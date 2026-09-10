@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Boxes, ChevronLeft, ClipboardList, History, Home, Import, MapPin, PackageSearch, Search, Settings, Upload, X } from 'lucide-react'
 import { addressRecordService } from '../data/localData'
+import { checkConnection, CONNECTION_CHECK_INTERVAL_MS, type ConnectionState } from '../services/connectionStatus'
 import { listProducts } from '../services/productService'
 import { searchProducts } from '../services/productSearch'
 import type { AddressRecord } from '../types/addressRecord'
@@ -21,7 +22,14 @@ const navigationGroups: { label: string; items: NavItem[] }[] = [
 ]
 const commandItems: Array<{ label: string; page: AppPage; hint: string }> = [{ label: 'Stok ara', page: 'stocks', hint: 'Stok listesine git' }, { label: 'Adres ara', page: 'find', hint: 'Hızlı operasyon araması' }, { label: 'CABA listesi', page: 'caba', hint: 'Fiş yapıştır, adresleri bul' }, { label: 'Stok ekle', page: 'stocks', hint: 'Stoklar ekranını aç' }, { label: 'Excel içe aktar', page: 'import', hint: 'Veri içe aktarma' }, { label: 'Dışa aktar', page: 'export', hint: 'Veri dışa aktarma' }, { label: 'Ayarlar', page: 'settings', hint: 'Uygulama tercihleri' }]
 
+const CONNECTION_LABEL: Record<ConnectionState, { title: string; detail: string }> = {
+  checking: { title: 'Bağlantı denetleniyor', detail: 'Supabase yanıtı bekleniyor' },
+  online: { title: 'Sistem çevrimiçi', detail: 'Supabase bağlantısı aktif' },
+  offline: { title: 'Bağlantı yok', detail: "Supabase'e ulaşılamıyor" },
+}
+
 export function AppLayout({ children, activePage, onNavigate, onProductSelect }: AppLayoutProps) {
+  const [connection, setConnection] = useState<ConnectionState>('checking')
   const [isCommandOpen, setIsCommandOpen] = useState(false); const [query, setQuery] = useState(''); const [collapsed, setCollapsed] = useState(false)
   const [products, setProducts] = useState<Product[]>([])
   const [records, setRecords] = useState<AddressRecord[]>([])
@@ -35,6 +43,18 @@ export function AppLayout({ children, activePage, onNavigate, onProductSelect }:
   // yavaşlatmaz. Sonraki açılışlarda eldeki veri anında gösterilir ve arka planda
   // tazelenir (stale-while-revalidate): böylece her tuş vuruşunda değil, palet
   // başına en fazla bir Supabase sorgusu yapılır.
+  // Gösterge bir şey iddia ediyorsa doğrulanmış olmalı: periyodik ve pencere
+  // odağa döndüğünde kontrol. Uyku sonrası ilk bakışta güncel olması için
+  // odak olayı da dinleniyor.
+  useEffect(() => {
+    let cancelled = false
+    const run = () => { void checkConnection().then((ok) => { if (!cancelled) setConnection(ok ? 'online' : 'offline') }) }
+    run()
+    const timer = window.setInterval(run, CONNECTION_CHECK_INTERVAL_MS)
+    window.addEventListener('focus', run)
+    return () => { cancelled = true; window.clearInterval(timer); window.removeEventListener('focus', run) }
+  }, [])
+
   useEffect(() => {
     if (!isCommandOpen) return
     let isMounted = true
@@ -78,7 +98,7 @@ export function AppLayout({ children, activePage, onNavigate, onProductSelect }:
   const hasQuery = trimmedQuery.length > 0
   const hasNoResults = hasQuery && stockResults.length === 0 && visibleCommands.length === 0 && isSearchDataLoaded && !searchDataError
 
-  return <div className={`app-shell ${collapsed ? 'app-shell--collapsed' : ''}`}><aside className="app-sidebar"><div className="sidebar-brand"><span className="brand__mark">SA</span><span className="sidebar-brand__words"><span className="brand__name">StokAdres</span><small className="brand__context">Depo Yönetimi</small></span><button className="sidebar-collapse" type="button" onClick={() => setCollapsed((value) => !value)} title={collapsed ? 'Menüyü genişlet' : 'Menüyü daralt'}><ChevronLeft size={16}/></button></div><nav className="sidebar-nav" aria-label="Ana navigasyon">{navigationGroups.map((group) => <div className="sidebar-group" key={group.label}><span className="sidebar-group__label">{group.label}</span>{group.items.map((item) => { const Icon = item.icon; return <button title={collapsed ? item.label : undefined} className={`sidebar-link ${activePage === item.id ? 'sidebar-link--active' : ''}`} key={item.id} type="button" onClick={() => navigate(item.id)} aria-current={activePage === item.id ? 'page' : undefined}><Icon size={16} strokeWidth={1.75} /><span>{item.label}</span></button> })}</div>)}</nav><div className="sidebar-footer"><span className="status-dot" /><span><strong>Sistem çevrimiçi</strong><small>Supabase bağlantısı aktif</small></span></div></aside><div className="app-shell__main"><header className="application-bar"><div><span className="application-bar__eyebrow">StokAdres / Operasyon</span><strong>{activeLabel}</strong></div><button className="command-trigger" type="button" onClick={() => setIsCommandOpen(true)}><Search size={15} /><span>Stok, barkod veya adres ara</span><kbd>Ctrl K</kbd></button></header>{children}</div>{isCommandOpen && <div className="command-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setIsCommandOpen(false) }}><section className="command-palette" role="dialog" aria-modal="true" aria-label="Hızlı komutlar"><div className="command-palette__input"><Search size={18} /><input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key !== 'Enter') return; event.preventDefault(); if (stockResults[0]) openProduct(stockResults[0].id); else if (visibleCommands[0]) runCommand(visibleCommands[0]) }} placeholder="Stok kodu, stok adı, barkod veya adres ara..." /><button type="button" onClick={() => setIsCommandOpen(false)} aria-label="Komut paletini kapat"><X size={17} /></button></div><div className="command-palette__list">
+  return <div className={`app-shell ${collapsed ? 'app-shell--collapsed' : ''}`}><aside className="app-sidebar"><div className="sidebar-brand"><span className="brand__mark">SA</span><span className="sidebar-brand__words"><span className="brand__name">StokAdres</span><small className="brand__context">Depo Yönetimi</small></span><button className="sidebar-collapse" type="button" onClick={() => setCollapsed((value) => !value)} title={collapsed ? 'Menüyü genişlet' : 'Menüyü daralt'}><ChevronLeft size={16}/></button></div><nav className="sidebar-nav" aria-label="Ana navigasyon">{navigationGroups.map((group) => <div className="sidebar-group" key={group.label}><span className="sidebar-group__label">{group.label}</span>{group.items.map((item) => { const Icon = item.icon; return <button title={collapsed ? item.label : undefined} className={`sidebar-link ${activePage === item.id ? 'sidebar-link--active' : ''}`} key={item.id} type="button" onClick={() => navigate(item.id)} aria-current={activePage === item.id ? 'page' : undefined}><Icon size={16} strokeWidth={1.75} /><span>{item.label}</span></button> })}</div>)}</nav><div className="sidebar-footer"><span className={`status-dot status-dot--${connection}`} /><span><strong>{CONNECTION_LABEL[connection].title}</strong><small>{CONNECTION_LABEL[connection].detail}</small></span></div></aside><div className="app-shell__main"><header className="application-bar"><div><span className="application-bar__eyebrow">StokAdres / Operasyon</span><strong>{activeLabel}</strong></div><button className="command-trigger" type="button" onClick={() => setIsCommandOpen(true)}><Search size={15} /><span>Stok, barkod veya adres ara</span><kbd>Ctrl K</kbd></button></header>{children}</div>{isCommandOpen && <div className="command-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setIsCommandOpen(false) }}><section className="command-palette" role="dialog" aria-modal="true" aria-label="Hızlı komutlar"><div className="command-palette__input"><Search size={18} /><input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key !== 'Enter') return; event.preventDefault(); if (stockResults[0]) openProduct(stockResults[0].id); else if (visibleCommands[0]) runCommand(visibleCommands[0]) }} placeholder="Stok kodu, stok adı, barkod veya adres ara..." /><button type="button" onClick={() => setIsCommandOpen(false)} aria-label="Komut paletini kapat"><X size={17} /></button></div><div className="command-palette__list">
 
     {hasQuery && stockResults.length > 0 && <>
       <p className="command-palette__group">Stoklar</p>

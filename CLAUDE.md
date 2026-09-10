@@ -49,7 +49,7 @@ npm run build:win  # build + electron-builder --win nsis → release/
 electron/main.ts          BrowserWindow + 2 IPC handler (save-csv, save-file)
 electron/preload.ts       contextBridge → window.electronAPI
 src/App.tsx               Router YOK — state tabanlı ekran switch'i
-src/layouts/AppLayout     Sidebar (10 link) + Ctrl+K komut paleti
+src/layouts/AppLayout     Sidebar (9 link) + Ctrl+K komut paleti + bağlantı göstergesi
 src/lib/supabase.ts       createClient<Database> (tipli)
 src/lib/pagination.ts     fetchAllRows() — PostgREST 1000 satır sınırını aşar
 src/pages/                9 sayfa
@@ -57,7 +57,7 @@ src/services/             Veri erişim katmanı (UI supabase'i doğrudan import 
 src/services/*.test.ts    Vitest testleri
 src/data/localData.ts     addressRecordService singleton'ı burada
 scripts/bulk-load-products.mjs  Toplu ürün yükleme (README yanında)
-supabase/migrations/      14 dosya
+supabase/migrations/      15 dosya
 .github/workflows/ci.yml  typecheck + test + build
 ```
 
@@ -70,12 +70,12 @@ sunucu tarafına taşındığında ekranlar hiç değişmedi.
 |---|---|---|
 | Stoklar | `stocks` | 🟢 **Sunucu tarafı** sayfalama + arama + filtre sayaçları |
 | Ürün Detayı | `stocks` + seçim | 🟢 Tam CRUD |
-| Adresler | `addresses` | 🟢 Tam CRUD |
+| Adresler | `addresses` | 🟢 Tam CRUD + 50'şerli sayfalama |
 | İşlem Geçmişi | `audit` | 🟢 Çalışıyor |
 | **CABA Listesi** | `caba` | 🟢 **Yeni** — fiş yapıştır → adresleri bul (salt okuma) |
 | **İçe Aktar** | `import` | 🟢 **Yeniden yazıldı** — önizleme + satır bazlı düzeltme + toplu yazma |
-| Genel Bakış | `dashboard` | 🟡 `dashboard_summary` view'ından tek sorgu |
-| Adres Bul | `find` | 🟡 Arama iyileşti ama **tüm ürünleri istemciye çekiyor** (bkz. Tuzak #4) |
+| Genel Bakış | `dashboard` | 🟢 `dashboard_summary` tek sorgu; metrikler filtreli listeye tıklanabilir |
+| Adres Bul | `find` | 🟢 Sunucu tarafı arama; açılışta veri çekmiyor. Adres araması **yok** (Tuzak #4) |
 | Dışa Aktar | `export` | 🟡 Aynı ölçek sorunu (Tuzak #4) |
 | Ayarlar | `settings` | 🔴 Sadece tema butonu (artık kalıcı) |
 
@@ -114,11 +114,19 @@ belleğe alır. **Yeni kodda kullanma.** Bunun yerine:
 - Dashboard metrikleri → `dashboard_summary` view
 - Toplu kod/barkod eşleme → `productLookup.ts` (`in.(...)` ile 200'lük parçalar)
 
-### 4. 🔴 `Finder` ve `ExportHub` hâlâ tüm tabloyu çekiyor
-[OperationsPage.tsx](src/pages/OperationsPage.tsx) içindeki her iki bileşen de
-`listProducts()` + `addressRecordService.list()` çağırıyor. 95k ölçekte açılış
-çok yavaş ve bellek ağır. **Açık Sorun #1** — `productLookup` / `search_products`
-üzerine taşınmalı.
+### 4. 🟠 `ExportHub` hâlâ tüm tabloyu çekiyor
+[OperationsPage.tsx](src/pages/OperationsPage.tsx) içindeki `ExportHub`
+`listProducts()` + `addressRecordService.list()` çağırıyor. 95k ölçekte çok
+yavaş. **Açık Sorun #1.**
+
+`Finder` (Adres Bul) düzeltildi: açılışta hiç veri çekmiyor, arama sunucuda
+`search_products` ile yapılıyor, adresler yalnızca görünen 20 sonuç için
+`findActiveAddresses` ile geliyor.
+
+⚠️ **`search_products` ADRES ARAMIYOR** — stok kodu, stok adı ve barkod arıyor.
+Canlıda doğrulandı: `G27-04` adresinde 2 ürün var, fonksiyon 0 sonuç döndürüyor.
+Ekran metinleri bu yüzden adres vaat etmiyor. Adresten ürüne ters arama ayrı bir
+iş: RPC'ye adres dalı + uygun index gerekiyor.
 
 ### 5. 🔴 Türkçe locale — normalize ederken `tr-TR` KULLANMA
 Veritabanı collation'ı `en_US.UTF-8`. Postgres `lower('IĞNE')` → `'iğne'`
@@ -270,9 +278,9 @@ address_conflicts   → address_conflicts_audit_trigger
 
 | # | Sev | Sorun |
 |---|---|---|
-| 1 | 🔴 | **`Finder` ve `ExportHub` 95k satırı istemciye çekiyor** (Tuzak #4) |
+| 1 | 🟠 | **`ExportHub` hâlâ 95k satırı istemciye çekiyor** (Tuzak #4). `Finder` düzeltildi |
 | 2 | 🔴 | **Auth yok** — anon key installer bundle'ında, anon `products`/`address_records`/`product_barcodes`'a yazabiliyor. Tek kullanıcı/tek makine olduğu için bilinçli ertelendi; ikinci makine çıkarsa öne alınmalı |
-| 3 | 🟡 | `AddressesPage` sayfalanmıyor — 2.000+ satırı tek seferde DOM'a basıyor |
+| 3 | 🟢 | ~~`AddressesPage` sayfalanmıyor~~ → 50'şerli sayfalandı. **~20.000 kaydı geçince** sunucu tarafına taşınmalı (filtre/sıralama/arama hâlâ istemcide) |
 | 4 | 🟡 | Adresten ürün bulma (ters arama) yok; barkod okuyucu akışı yok |
 | 5 | 🟡 | `as unknown as` cast'leri — iç içe ilişki/view seçimlerinde nullable uyumsuzluğu |
 | 6 | 🟡 | `pg_trgm` public şemada (Supabase linter). Taşımak 95k satırda GIN index'leri yeniden kurmayı gerektirir; bilinçli bırakıldı |
@@ -447,3 +455,41 @@ kullanıcıdan 512×512 PNG veya `.ico` bekleniyor.
   çalıştırmıyordu. Placeholder env değişkenleriyle çözüldü; `.env` geçici
   gizlenerek yerelde birebir yeniden üretilip doğrulandı. CI artık yeşil.
 - **3.8 (ikon) yapılmadı** — kullanıcıdan 512×512 PNG / `.ico` bekleniyor.
+
+## 2026-09-10 — Adres Bul, Adresler sayfalama ve UI düzeltmeleri
+
+Kullanıcı gerçek kullanımdan iki sorun bildirdi; ikisi de doğrulandı ve
+düzeltildi.
+
+**Adres Bul takılıyordu.** Açılışta `listProducts()` + `addressRecordService
+.list()` çağırıyordu → 94.900 üründe ~95 istek, ~33 MB. Ekran "Stoklar
+yükleniyor..." yazısında kalıyordu. Artık açılışta hiç veri çekmiyor (731 ms),
+arama sunucuda (`search_products`, 250 ms debounce), adresler yalnızca görünen
+20 sonuç için. Ölçüm: arama 0,6–1,6 sn + adresler ~0,3 sn.
+**Sürenin çoğu ağ gecikmesi** — proje `ap-northeast-1` (Tokyo), her istek
+~300 ms taban maliyet ödüyor. Bölge değişimi ayrı bir karar.
+
+**Adresler sayfalandı.** 2.801 kayıt alt alta DOM'a basılıyordu. Artık
+50'şerli, "1-50 / 2801 kayıt" + Önceki/Sonraki. Filtre/sıralama/arama istemcide
+ve anlık kaldı; yalnızca çizim sayfalı.
+
+**"Adresi yok" filtresi** (migration `20260910213000`): `product_filter_counts`
+view'ine `no_address` kolonu, `search_products`'a `'no-address'` dalı.
+93.033 ürün — yapılacak işin listesi. Canlıda doğrulandı: filtre açıkken
+görünen satırların **hepsinin** adres kolonu "Adres yok".
+
+**Genel Bakış metrikleri tıklanabilir.** "Toplam stok" ve "Adresi olmayan"
+gerçek `<button>` (klavyeyle odaklanılabilir, ok işareti), ilgili filtre
+önceden seçili olarak Stoklar'a götürüyor. "Toplam koli" ve "Adresli stok"
+düz kutu kaldı — tek bir filtreye karşılık gelmiyorlar, tıklanacakmış gibi
+görünüp hiçbir şey yapmamaları daha kötü olurdu.
+
+**Kenar çubuğundaki bağlantı göstergesi gerçek oldu.** Eskiden koşulsuz
+"Sistem çevrimiçi" yazıyordu. Artık `checkConnection()` ile 60 sn'de bir ve
+pencere odağa döndüğünde denetleniyor. İlk sürümde çevrimdışı tespiti 10 sn
+sürüyordu (fetch hatası supabase-js katmanlarından geçene kadar); 4 sn'lik
+`AbortController` zaman aşımı eklendi. Ölçüldü: **çevrimdışı 5,1 sn, geri
+dönüş 523 ms.**
+
+**Zaten düzelmiş çıkanlar:** Genel Bakış'taki "Son Eklenen Adresler" başlığı
+PR #2'de düzeltilmiş (eskiden yanlışlıkla "Stoklar" diyordu).

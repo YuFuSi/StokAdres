@@ -2,8 +2,15 @@ import { useEffect, useState } from 'react'
 import { getDashboardData, type DashboardData } from '../services/dashboardService'
 import { ArrowRight, Download, MapPin, PackagePlus, Upload } from 'lucide-react'
 import type { AppPage } from '../layouts/AppLayout'
+import type { ProductListFilter } from '../services/productService'
 
-export function DashboardPage({ onNavigate }: { onNavigate: (page: AppPage) => void }) {
+type DashboardPageProps = {
+  onNavigate: (page: AppPage) => void
+  /** Metrikten Stoklar ekranına, ilgili filtre önceden seçili olarak geçer. */
+  onOpenStocks: (filter: ProductListFilter) => void
+}
+
+export function DashboardPage({ onNavigate, onOpenStocks }: DashboardPageProps) {
   const [data, setData] = useState<DashboardData | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState('')
@@ -37,10 +44,14 @@ export function DashboardPage({ onNavigate }: { onNavigate: (page: AppPage) => v
       {data && !error && (
         <>
           <section className="dashboard-metrics" aria-label="Stok metrikleri">
-            <Metric label="Toplam stok" hint="Kayıtlı ürün kartı" value={data.totalStocks} />
+            {/* Tıklanabilir olanlar Stoklar ekranındaki bir filtreye birebir
+                karşılık gelenler. "Toplam koli" bir toplam, "Adresli stok" ise
+                tek bir filtreye karşılık gelmiyor (tek + çoklu adres); ikisi
+                de düz sayı olarak duruyor. */}
+            <Metric label="Toplam stok" hint="Kayıtlı ürün kartı" value={data.totalStocks} onOpen={() => onOpenStocks('all')} />
             <Metric label="Toplam koli" hint="Aktif konumlardaki miktar" value={data.totalCartons} />
             <Metric label="Adresli stok" hint="Fiziksel konumu olan" value={data.productsWithAddress} />
-            <Metric label="Adresi olmayan" hint="Konum bekleyen ürün" value={data.productsWithoutAddress} />
+            <Metric label="Adresi olmayan" hint="Konum bekleyen ürün" value={data.productsWithoutAddress} onOpen={() => onOpenStocks('no-address')} />
           </section>
           <section className="dashboard-operations">
             <div className="dashboard-activity"><div className="section-heading"><h2>Son İşlemler</h2><span className="section-heading__line" /></div><p><span className="status-dot" /> {data.activeAddressRecords} aktif adres kaydı depoda takip ediliyor.</p><p className="dashboard-activity__hint">Kayıt ayrıntıları ve geçmiş hareketler sistem ekranından izlenebilir.</p></div>
@@ -73,8 +84,20 @@ export function DashboardPage({ onNavigate }: { onNavigate: (page: AppPage) => v
   )
 }
 
-function Metric({ label, hint, value }: { label: string; hint: string; value: number }) {
-  return <div className="dashboard-metric"><div className="dashboard-metric__top"><span>{label}</span></div><strong>{value}</strong><small>{hint}</small></div>
+/**
+ * `onOpen` verildiğinde metrik gerçek bir butona dönüşür: klavyeyle
+ * odaklanılabilir, Enter/Space ile açılır ve ok işaretiyle tıklanabilir olduğu
+ * belli olur. Verilmediğinde düz bir kutu olarak kalır — tıklanacakmış gibi
+ * görünüp hiçbir şey yapmaması en kötü seçenek olurdu.
+ */
+function Metric({ label, hint, value, onOpen }: { label: string; hint: string; value: number; onOpen?: () => void }) {
+  const body = <>
+    <div className="dashboard-metric__top"><span>{label}</span>{onOpen && <ArrowRight size={14} aria-hidden="true" />}</div>
+    <strong>{value.toLocaleString('tr-TR')}</strong>
+    <small>{hint}</small>
+  </>
+  if (!onOpen) return <div className="dashboard-metric">{body}</div>
+  return <button className="dashboard-metric dashboard-metric--link" type="button" onClick={onOpen} aria-label={`${label}: ${value}. Listeyi aç`}>{body}</button>
 }
 
 function formatDate(value: string): string {

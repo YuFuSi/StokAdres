@@ -16,18 +16,20 @@ import './StocksPage.css'
 type StocksPageProps = {
   onBackToDashboard: () => void
   onProductSelect: (productId: string) => void
+  /** Genel Bakış'tan gelindiginde onceden secili filtre. */
+  initialFilter?: ProductListFilter
 }
 
 const SEARCH_DEBOUNCE_MS = 250
 
-export function StocksPage({ onBackToDashboard, onProductSelect }: StocksPageProps) {
+export function StocksPage({ onBackToDashboard, onProductSelect, initialFilter = 'all' }: StocksPageProps) {
   const [products, setProducts] = useState<ProductListItem[]>([])
   const [total, setTotal] = useState(0)
-  const [counts, setCounts] = useState({ all: 0, single: 0, multiple: 0 })
+  const [counts, setCounts] = useState({ all: 0, none: 0, single: 0, multiple: 0 })
   const [page, setPage] = useState(0)
   const [query, setQuery] = useState('')
   const [debouncedQuery, setDebouncedQuery] = useState('')
-  const [filter, setFilter] = useState<ProductListFilter>('all')
+  const [filter, setFilter] = useState<ProductListFilter>(initialFilter)
   const [sort, setSort] = useState<ProductListSort>('stock-name')
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState('')
@@ -181,6 +183,7 @@ export function StocksPage({ onBackToDashboard, onProductSelect }: StocksPagePro
         </label>
         <div className="stocks-filter-group" aria-label="Adres filtreleri">
           <button className={filter === 'all' ? 'stocks-filter stocks-filter--active' : 'stocks-filter'} type="button" onClick={() => setFilter('all')}>Tümü <strong>{counts.all}</strong></button>
+          <button className={filter === 'no-address' ? 'stocks-filter stocks-filter--active' : 'stocks-filter'} type="button" onClick={() => setFilter('no-address')}>Adresi yok <strong>{counts.none}</strong></button>
           <button className={filter === 'single-address' ? 'stocks-filter stocks-filter--active' : 'stocks-filter'} type="button" onClick={() => setFilter('single-address')}>Tek adres <strong>{counts.single}</strong></button>
           <button className={filter === 'multiple-addresses' ? 'stocks-filter stocks-filter--active' : 'stocks-filter'} type="button" onClick={() => setFilter('multiple-addresses')}>Çoklu adres <strong>{counts.multiple}</strong></button>
         </div>

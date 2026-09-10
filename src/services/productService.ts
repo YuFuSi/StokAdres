@@ -73,7 +73,7 @@ export async function listProducts(): Promise<Product[]> {
 // kullanıyor — gerekçesi queryProducts içinde.
 // ---------------------------------------------------------------------------
 
-export type ProductListFilter = 'all' | 'single-address' | 'multiple-addresses'
+export type ProductListFilter = 'all' | 'no-address' | 'single-address' | 'multiple-addresses'
 export type ProductListSort = 'stock-name' | 'stock-code' | 'address-count' | 'carton-count'
 
 export type ProductListItem = Product & {
@@ -123,6 +123,7 @@ export async function queryProducts(options: ProductQueryOptions = {}): Promise<
 
   let request = supabase.from('products_with_metrics').select(METRICS_SELECT, { count: 'exact' })
 
+  if (filter === 'no-address') request = request.eq('address_count', 0)
   if (filter === 'single-address') request = request.eq('address_count', 1)
   if (filter === 'multiple-addresses') request = request.gt('address_count', 1)
 
@@ -190,12 +191,16 @@ async function searchProductsOnServer(
  * Eskiden view uzerinde uc ayri `count` sorgusu atiliyordu; her biri 94.894
  * urunu tariyordu (584 ms x 3 = ~1,75 s). Simdi tek sorguda 75 ms.
  */
-export async function getProductFilterCounts(): Promise<{ all: number; single: number; multiple: number }> {
+export async function getProductFilterCounts(): Promise<{ all: number; none: number; single: number; multiple: number }> {
   const { data, error } = await supabase.from('product_filter_counts').select('*').single()
   if (error) throw new Error(error.message)
-  const row = data as unknown as { all_products: number | null; single_address: number | null; multiple_address: number | null }
+  const row = data as unknown as {
+    all_products: number | null; no_address: number | null
+    single_address: number | null; multiple_address: number | null
+  }
   return {
     all: row.all_products ?? 0,
+    none: row.no_address ?? 0,
     single: row.single_address ?? 0,
     multiple: row.multiple_address ?? 0,
   }

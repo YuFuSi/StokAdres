@@ -8,16 +8,29 @@ import { OperationsPage } from './pages/OperationsPage'
 import { CabaLookupPage } from './pages/CabaLookupPage'
 import { ImportPage } from './pages/ImportPage'
 import { useState } from 'react'
+import type { ProductListFilter } from './services/productService'
 
 export function App() {
   const [activePage, setActivePage] = useState<AppPage>('dashboard')
   const [selectedProductId, setSelectedProductId] = useState<string | null>(null)
   const [selectedAddressId, setSelectedAddressId] = useState<string | null>(null)
+  const [stocksFilter, setStocksFilter] = useState<ProductListFilter>('all')
 
   const navigate = (page: AppPage) => {
     setSelectedProductId(null)
     setSelectedAddressId(null)
+    setStocksFilter('all')
     setActivePage(page)
+  }
+
+  // Genel Bakış'taki metrikten Stoklar listesine, filtre önceden seçili olarak.
+  // StocksPage her geçişte yeniden monte edildiği için filtre başlangıç
+  // değeri olarak veriliyor; sonrasında kullanıcı serbestçe değiştirebilir.
+  const openStocksWithFilter = (filter: ProductListFilter) => {
+    setSelectedProductId(null)
+    setSelectedAddressId(null)
+    setStocksFilter(filter)
+    setActivePage('stocks')
   }
 
   // Ctrl+K paletinden bir stok seçildiğinde doğrudan ürün detayına gidilir.
@@ -31,9 +44,9 @@ export function App() {
 
   return (
     <AppLayout activePage={activePage} onNavigate={navigate} onProductSelect={openProduct}>
-      {activePage === 'dashboard' && <DashboardPage onNavigate={navigate} />}
+      {activePage === 'dashboard' && <DashboardPage onNavigate={navigate} onOpenStocks={openStocksWithFilter} />}
       {activePage === 'stocks' && selectedProductId && <ProductDetailPage productId={selectedProductId} onBack={() => setSelectedProductId(null)} onAddressSelect={(recordId) => { setSelectedProductId(null); setSelectedAddressId(recordId); setActivePage('addresses') }} />}
-      {activePage === 'stocks' && !selectedProductId && <StocksPage onBackToDashboard={() => navigate('dashboard')} onProductSelect={setSelectedProductId} />}
+      {activePage === 'stocks' && !selectedProductId && <StocksPage onBackToDashboard={() => navigate('dashboard')} onProductSelect={setSelectedProductId} initialFilter={stocksFilter} />}
       {activePage === 'addresses' && <AddressesPage onBackToDashboard={() => setActivePage('dashboard')} initialSelectedRecordId={selectedAddressId} />}
       {activePage === 'find' && <OperationsPage page="find" />}
       {activePage === 'caba' && <CabaLookupPage />}
