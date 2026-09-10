@@ -7,6 +7,7 @@ import { ConflictsPage } from './pages/ConflictsPage'
 import { AuditLogsPage } from './pages/AuditLogsPage'
 import { OperationsPage } from './pages/OperationsPage'
 import { CabaLookupPage } from './pages/CabaLookupPage'
+import { ImportPage } from './pages/ImportPage'
 import { useState } from 'react'
 
 export function App() {
@@ -37,7 +38,7 @@ export function App() {
       {activePage === 'addresses' && <AddressesPage onBackToDashboard={() => setActivePage('dashboard')} initialSelectedRecordId={selectedAddressId} />}
       {activePage === 'find' && <OperationsPage page="find" />}
       {activePage === 'caba' && <CabaLookupPage />}
-      {activePage === 'import' && <OperationsPage page="import" />}
+      {activePage === 'import' && <ImportPage />}
       {activePage === 'export' && <OperationsPage page="export" />}
       {activePage === 'settings' && <OperationsPage page="settings" />}
       {activePage === 'conflicts' && <ConflictsPage />}
