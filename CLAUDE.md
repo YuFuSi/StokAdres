@@ -57,7 +57,7 @@ src/services/             Veri erişim katmanı (UI supabase'i doğrudan import 
 src/services/*.test.ts    Vitest testleri
 src/data/localData.ts     addressRecordService singleton'ı burada
 scripts/bulk-load-products.mjs  Toplu ürün yükleme (README yanında)
-supabase/migrations/      15 dosya
+supabase/migrations/      16 dosya
 .github/workflows/ci.yml  typecheck + test + build
 ```
 
@@ -75,8 +75,8 @@ sunucu tarafına taşındığında ekranlar hiç değişmedi.
 | **CABA Listesi** | `caba` | 🟢 **Yeni** — fiş yapıştır → adresleri bul (salt okuma) |
 | **İçe Aktar** | `import` | 🟢 **Yeniden yazıldı** — önizleme + satır bazlı düzeltme + toplu yazma |
 | Genel Bakış | `dashboard` | 🟢 `dashboard_summary` tek sorgu; metrikler filtreli listeye tıklanabilir |
-| Adres Bul | `find` | 🟢 Sunucu tarafı arama; açılışta veri çekmiyor. Adres araması **yok** (Tuzak #4) |
-| Dışa Aktar | `export` | 🟡 Aynı ölçek sorunu (Tuzak #4) |
+| Adres Bul | `find` | 🟢 Sunucu tarafı arama; stok kodu / ad / barkod **ve adres** (ters arama) |
+| Dışa Aktar | `export` | 🟢 Her küme yalnızca ihtiyacını çekiyor; ilerleme gösteriliyor |
 | Ayarlar | `settings` | 🔴 Sadece tema butonu (artık kalıcı) |
 
 ---
@@ -114,19 +114,14 @@ belleğe alır. **Yeni kodda kullanma.** Bunun yerine:
 - Dashboard metrikleri → `dashboard_summary` view
 - Toplu kod/barkod eşleme → `productLookup.ts` (`in.(...)` ile 200'lük parçalar)
 
-### 4. 🟠 `ExportHub` hâlâ tüm tabloyu çekiyor
-[OperationsPage.tsx](src/pages/OperationsPage.tsx) içindeki `ExportHub`
-`listProducts()` + `addressRecordService.list()` çağırıyor. 95k ölçekte çok
-yavaş. **Açık Sorun #1.**
+### 4. `listProducts()` yalnızca dışa aktarmada
+`Finder` ve `ExportHub` düzeltildi; ikisi de artık gerektiği kadarını çekiyor.
+`listProducts()` (94.900 satır ≈ 95 istek) **sadece** "Stoklar" dışa aktarımında
+kalıyor — orada zaten hepsi gerekiyor ve ilerleme gösteriliyor.
 
-`Finder` (Adres Bul) düzeltildi: açılışta hiç veri çekmiyor, arama sunucuda
-`search_products` ile yapılıyor, adresler yalnızca görünen 20 sonuç için
-`findActiveAddresses` ile geliyor.
-
-⚠️ **`search_products` ADRES ARAMIYOR** — stok kodu, stok adı ve barkod arıyor.
-Canlıda doğrulandı: `G27-04` adresinde 2 ürün var, fonksiyon 0 sonuç döndürüyor.
-Ekran metinleri bu yüzden adres vaat etmiyor. Adresten ürüne ters arama ayrı bir
-iş: RPC'ye adres dalı + uygun index gerekiyor.
+`search_products` stok kodu, stok adı, barkod **ve aktif adres** arıyor
+(20260910223000). Adres yazınca o raftaki ürünler dönüyor — ters arama ayrı bir
+ekran değil, aynı kutunun içinde.
 
 ### 5. 🔴 Türkçe locale — normalize ederken `tr-TR` KULLANMA
 Veritabanı collation'ı `en_US.UTF-8`. Postgres `lower('IĞNE')` → `'iğne'`
@@ -278,10 +273,10 @@ address_conflicts   → address_conflicts_audit_trigger
 
 | # | Sev | Sorun |
 |---|---|---|
-| 1 | 🟠 | **`ExportHub` hâlâ 95k satırı istemciye çekiyor** (Tuzak #4). `Finder` düzeltildi |
+| 1 | 🟡 | Adresler ekranı ~20.000 kaydı geçince sunucu tarafına taşınmalı (şu an 2.818; günde ~2.700 ekleniyor) |
 | 2 | 🔴 | **Auth yok** — anon key installer bundle'ında, anon `products`/`address_records`/`product_barcodes`'a yazabiliyor. Tek kullanıcı/tek makine olduğu için bilinçli ertelendi; ikinci makine çıkarsa öne alınmalı |
-| 3 | 🟢 | ~~`AddressesPage` sayfalanmıyor~~ → 50'şerli sayfalandı. **~20.000 kaydı geçince** sunucu tarafına taşınmalı (filtre/sıralama/arama hâlâ istemcide) |
-| 4 | 🟡 | Adresten ürün bulma (ters arama) yok; barkod okuyucu akışı yok |
+| 3 | 🟢 | Uygulama ikonu yok (sıradaki iş) |
+| 4 | 🟡 | Barkod okuyucu akışı yok (kullanıcı şimdilik istemiyor — kâğıtla çalışılıyor) |
 | 5 | 🟡 | `as unknown as` cast'leri — iç içe ilişki/view seçimlerinde nullable uyumsuzluğu |
 | 6 | 🟡 | `pg_trgm` public şemada (Supabase linter). Taşımak 95k satırda GIN index'leri yeniden kurmayı gerektirir; bilinçli bırakıldı |
 | 7 | 🟢 | Installer imzasız, uygulama ikonu yok (Faz 3.8 — ikon dosyası kullanıcıdan bekleniyor) |
@@ -493,3 +488,41 @@ dönüş 523 ms.**
 
 **Zaten düzelmiş çıkanlar:** Genel Bakış'taki "Son Eklenen Adresler" başlığı
 PR #2'de düzeltilmiş (eskiden yanlışlıkla "Stoklar" diyordu).
+
+## 2026-09-10 — Ters arama ve Dışa Aktar ölçeklendirmesi
+
+**Adresten ürüne ters arama** (migration `20260910223000`).
+`search_products`'ın `matched` CTE'sine üçüncü bir union kolu: aktif adres
+kayıtlarında `ilike` eşleşmesi. `address_records.address` üzerine GIN trigram
+index eklendi (mevcut btree `ilike '%...%'` için işe yaramıyordu).
+Ters arama ayrı bir ekran DEĞİL — aynı arama kutusunda. Kullanıcı ne yazdığını
+düşünmek zorunda kalmıyor: stok kodu, ad, barkod veya adres.
+Doğrulandı: `G27-04` → 2 ürün (gerçek sayı 2); `G27` → 16 (15 adres eşleşmesi
++ 1 stok adında `G2718` geçen ürün — union'ın doğru davranışı).
+
+**Dışa Aktar artık yalnızca ihtiyacını çekiyor.** Eskiden hangi küme seçilirse
+seçilsin `listProducts()` + tüm adres kayıtları alınıyordu.
+
+| Veri kümesi | Önce | Sonra |
+|---|---|---|
+| Özet | ~98 istek | **4** (`address_records`×3 + `product_filter_counts`) |
+| Stok + Adres | ~98 istek | **13** (`address_records`×3 + `product_barcodes`×10) |
+| Adresler | ~98 istek | 3 |
+| Stoklar | ~95 istek | ~95 (kaçınılmaz) + **ilerleme göstergesi** |
+
+Bunu mümkün kılan değişiklikler:
+- `xlsxExport.exportWorkbook(sheets, name)` — artık hazır satır kümeleri
+  alıyor; hangi verinin gerektiğine kendi karar vermiyor.
+- `summaryRows(records, { totalProducts })` — ürün sayısı dizi uzunluğundan
+  değil `product_filter_counts`'tan.
+- `stockAddressRows(records, barcodesByProductId)` — 94.900 ürün yerine
+  yalnızca adres kaydı olan ~1.900 ürünün barkodu.
+- `productLookup.findBarcodesByProductId()` — AddressesPage'deki yerel
+  kopyadan servise taşındı; o sayfanın doğrudan `supabase` import'u da kalktı.
+- `fetchAllRows(..., onProgress)` — "12.000 stok alındı…" gösterebilmek için.
+
+**Yan etkiler:** `csvExport`'taki adres-özel üreticiler
+(`createAddressRecordsCsv`, `exportAddressRecordsCsv`, `CSV_EXPORT_HEADERS`)
+silindi; kaydetme zinciri genel amaçlı `saveCsvFile(csv, name)` oldu. Bunlar
+CSV fallback'inin seçilen veri kümesini yok saymasının kaynağıydı — Electron
+dışında her zaman adres kayıtları yazılıyordu.

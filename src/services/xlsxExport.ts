@@ -6,12 +6,22 @@ type ElectronSave = { saveFile?: (suggestedName: string, content: string, encodi
 
 export type ExportDataset = 'stocks' | 'addresses' | 'stock-address' | 'summary'
 
-export async function exportWorkbook(records: AddressRecord[], products: Product[], suggestedName: string, datasets: ExportDataset[] = ['stocks', 'addresses']): Promise<boolean> {
+export type ExportRow = Record<string, string | number>
+export type ExportSheet = { name: string; rows: ExportRow[] }
+
+/**
+ * Hazır satırlardan çalışma kitabı üretir.
+ *
+ * Bu fonksiyon eskiden (records, products, datasets) alıyor ve hangi sayfanın
+ * hangi veriye ihtiyacı olduğuna kendi karar veriyordu. Sonuç: yalnızca "Özet"
+ * istendiğinde bile 94.900 ürünün tamamı çekiliyordu. Artık veri yükleme
+ * çağıranın işi; burada yalnızca dosya üretiliyor.
+ */
+export async function exportWorkbook(sheets: ExportSheet[], suggestedName: string): Promise<boolean> {
   const workbook = XLSX.utils.book_new()
-  if (datasets.includes('stocks')) XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(stockRows(products)), 'Stoklar')
-  if (datasets.includes('addresses')) XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(addressRows(records)), 'Adresler')
-  if (datasets.includes('stock-address')) XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(stockAddressRows(records, products)), 'Stok_Adres')
-  if (datasets.includes('summary')) XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(summaryRows(records, products)), 'Özet')
+  for (const sheet of sheets) {
+    XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(sheet.rows), sheet.name)
+  }
   const base64 = XLSX.write(workbook, { type: 'base64', bookType: 'xlsx' })
   const electron = window as Window & { electronAPI?: ElectronSave }
   if (electron.electronAPI?.saveFile) return !(await electron.electronAPI.saveFile(suggestedName, base64, 'base64')).canceled
@@ -22,7 +32,39 @@ export async function exportWorkbook(records: AddressRecord[], products: Product
   return true
 }
 
-export function stockRows(products: Product[]) { return products.map(product => ({ 'Stok Kodu': product.stockCode, 'Stok Adı': product.stockName, Barkodlar: product.barcodes.join(' | '), Durum: product.isActive === false ? 'Pasif' : 'Aktif', 'Oluşturulma Tarihi': product.createdAt ?? '', 'Güncellenme Tarihi': product.updatedAt ?? '' })) }
-export function addressRows(records: AddressRecord[]) { return records.map(record => ({ Adres: record.address, 'Stok Kodu': record.stockCode, 'Stok Adı': record.stockName, 'Koli Adedi': record.cartonCount, Durum: record.isActive ? 'Aktif' : 'Pasif', Güncellenme: record.updatedAt })) }
-export function stockAddressRows(records: AddressRecord[], products: Product[]) { const map = new Map(products.map(product => [product.id, product])); return records.map(record => ({ 'Stok Kodu': record.stockCode, 'Stok Adı': record.stockName, Barkod: map.get(record.productId)?.barcodes.join(' | ') ?? '', Adres: record.address, Koli: record.cartonCount, Durum: record.isActive ? 'Aktif' : 'Pasif' })) }
-export function summaryRows(records: AddressRecord[], products: Product[]) { const activeRecords = records.filter(record => record.isActive); return [{ 'Toplam Stok': products.length, 'Toplam Adres': records.length, 'Toplam Koli': activeRecords.reduce((sum, record) => sum + record.cartonCount, 0), 'Aktif Stok': products.filter(product => product.isActive !== false).length, 'Aktif Adres': activeRecords.length, 'Adres Başına Koli': activeRecords.length ? activeRecords.reduce((sum, record) => sum + record.cartonCount, 0) / activeRecords.length : 0 }] }
+export function stockRows(products: Product[]): ExportRow[] { return products.map(product => ({ 'Stok Kodu': product.stockCode, 'Stok Adı': product.stockName, Barkodlar: product.barcodes.join(' | '), Durum: product.isActive === false ? 'Pasif' : 'Aktif', 'Oluşturulma Tarihi': product.createdAt ?? '', 'Güncellenme Tarihi': product.updatedAt ?? '' })) }
+
+export function addressRows(records: AddressRecord[]): ExportRow[] { return records.map(record => ({ Adres: record.address, 'Stok Kodu': record.stockCode, 'Stok Adı': record.stockName, 'Koli Adedi': record.cartonCount, Durum: record.isActive ? 'Aktif' : 'Pasif', Güncellenme: record.updatedAt })) }
+
+/**
+ * Barkodlar artık ürün listesi yerine ürün id'sine göre bir haritadan geliyor.
+ * Eskiden bu satırları üretmek için TÜM ürünler çekiliyordu; oysa yalnızca
+ * adres kaydı olan ürünlerin barkodu gerekiyor (94.900 yerine ~1.900).
+ */
+export function stockAddressRows(records: AddressRecord[], barcodesByProductId: Map<string, string[]>): ExportRow[] {
+  return records.map(record => ({
+    'Stok Kodu': record.stockCode,
+    'Stok Adı': record.stockName,
+    Barkod: (barcodesByProductId.get(record.productId) ?? []).join(' | '),
+    Adres: record.address,
+    Koli: record.cartonCount,
+    Durum: record.isActive ? 'Aktif' : 'Pasif',
+  }))
+}
+
+/**
+ * Ürün toplamları artık dizi uzunluğundan değil, çağırandan geliyor: özet için
+ * 94.900 ürünü indirip saymak yerine `dashboard_summary` view'ından tek satır
+ * okunuyor.
+ */
+export function summaryRows(records: AddressRecord[], totals: { totalProducts: number }): ExportRow[] {
+  const activeRecords = records.filter(record => record.isActive)
+  const totalCartons = activeRecords.reduce((sum, record) => sum + record.cartonCount, 0)
+  return [{
+    'Toplam Stok': totals.totalProducts,
+    'Toplam Adres': records.length,
+    'Toplam Koli': totalCartons,
+    'Aktif Adres': activeRecords.length,
+    'Adres Başına Koli': activeRecords.length ? totalCartons / activeRecords.length : 0,
+  }]
+}

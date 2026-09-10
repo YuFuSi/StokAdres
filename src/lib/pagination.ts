@@ -45,6 +45,12 @@ type PageResult<Row> = {
 export async function fetchAllRows<Row>(
   fetchPage: (from: number, to: number) => PromiseLike<PageResult<Row>>,
   mapError: (error: { code?: string; message: string }) => Error = (error) => new Error(error.message),
+  /**
+   * Her sayfadan sonra o ana kadar toplanan satır sayısıyla çağrılır.
+   * 95.000 satırlık bir dışa aktarma ~95 istek sürüyor; kullanıcının ekranın
+   * donmadığını görmesi için ilerleme gösterilebilmeli.
+   */
+  onProgress?: (loaded: number) => void,
 ): Promise<Row[]> {
   const rows: Row[] = []
 
@@ -55,6 +61,7 @@ export async function fetchAllRows<Row>(
 
     const pageRows = data ?? []
     rows.push(...pageRows)
+    onProgress?.(rows.length)
     if (pageRows.length < SUPABASE_PAGE_SIZE) return rows
   }
 

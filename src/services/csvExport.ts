@@ -1,16 +1,3 @@
-import type { AddressRecord } from '../types/addressRecord'
-import type { Product } from '../types/product'
-
-export const CSV_EXPORT_HEADERS = [
-  'Stok Kodu',
-  'Stok Adı',
-  'Barkod',
-  'Adres',
-  'Koli Adedi',
-  'Durum',
-  'Oluşturulma Tarihi',
-  'Güncellenme Tarihi',
-] as const
 
 type SaveFilePickerOptions = {
   suggestedName: string
@@ -36,27 +23,6 @@ type WindowWithFilePicker = Window & {
   }
 }
 
-export function createAddressRecordsCsv(records: AddressRecord[], products: Product[] = []): string {
-  const productsById = new Map(products.map((product) => [product.id, product]))
-  const barcodesByStockCode = new Map(products.map((product) => [product.stockCode, product.barcodes.join(' | ')]))
-  const rows = records
-    .filter((record) => record.isActive)
-    .map((record) => [
-      record.stockCode,
-      record.stockName,
-      productsById.get(record.productId)?.barcodes.join(' | ') ?? barcodesByStockCode.get(record.stockCode) ?? '',
-      record.address,
-      String(record.cartonCount),
-      'Aktif',
-      record.createdAt,
-      record.updatedAt,
-    ])
-
-  return [CSV_EXPORT_HEADERS, ...rows]
-    .map((row) => row.map(escapeCsvField).join(','))
-    .join('\r\n')
-}
-
 /**
  * Nesne dizisinden CSV üretir; başlıklar ilk satırın anahtarlarından gelir.
  *
@@ -72,16 +38,23 @@ export function createCsvFromRows(rows: Array<Record<string, string | number>>):
   return [headers, ...body].map((row) => row.map(escapeCsvField).join(',')).join('\r\n')
 }
 
-export async function exportAddressRecordsCsv(
-  records: AddressRecord[],
-  products: Product[],
-  suggestedName: string,
-): Promise<boolean> {
-  const csv = `\uFEFF${createAddressRecordsCsv(records, products)}`
+/**
+ * CSV içeriğini kullanıcının seçtiği yere kaydeder. Sırayla: Electron kaydetme
+ * diyaloğu → tarayıcı dosya seçici → indirme bağlantısı.
+ *
+ * Eskiden bu zincir `exportAddressRecordsCsv` içine gömülüydü ve satırları da
+ * kendisi üretiyordu. Sonuç: Dışa Aktar ekranı Electron dışında çalıştığında
+ * kullanıcının seçtiği veri kümesi YOK SAYILIP her zaman adres kayıtları
+ * yazılıyordu. Artık üretim ile kaydetme ayrı.
+ *
+ * @returns Kaydedildiyse true, kullanıcı iptal ettiyse false.
+ */
+export async function saveCsvFile(csv: string, suggestedName: string): Promise<boolean> {
+  const content = csv.startsWith('﻿') ? csv : `﻿${csv}`
   const filePickerWindow = window as WindowWithFilePicker
 
   if (filePickerWindow.electronAPI?.saveCsv) {
-    const result = await filePickerWindow.electronAPI.saveCsv(suggestedName, csv)
+    const result = await filePickerWindow.electronAPI.saveCsv(suggestedName, content)
     return !result.canceled
   }
 
@@ -92,7 +65,7 @@ export async function exportAddressRecordsCsv(
         types: [{ description: 'CSV dosyası', accept: { 'text/csv': ['.csv'] } }],
       })
       const writable = await fileHandle.createWritable()
-      await writable.write(csv)
+      await writable.write(content)
       await writable.close()
       return true
     } catch (error) {
@@ -101,7 +74,7 @@ export async function exportAddressRecordsCsv(
     }
   }
 
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
+  const blob = new Blob([content], { type: 'text/csv;charset=utf-8' })
   const url = URL.createObjectURL(blob)
   const link = document.createElement('a')
   link.href = url

@@ -41,7 +41,11 @@ export class DuplicateProductStockCodeError extends Error {
 // `stock_code` benzersiz olsa da sayfalar arası sıralamayı garantiye almak için
 // ikincil anahtar olarak `id` de ekleniyor; böylece eşit değerli satırlar
 // sayfalar arasında kayıp veya tekrar üretmez.
-export async function listProducts(): Promise<Product[]> {
+/**
+ * TÜM ürünleri çeker: 94.900 satır ≈ 95 istek. Yalnızca gerçekten hepsi gereken
+ * yerlerde kullanılmalı (dışa aktarma). Liste/arama için queryProducts().
+ */
+export async function listProducts(onProgress?: (loaded: number) => void): Promise<Product[]> {
   const rows = await fetchAllRows<ProductRow>(
     (from, to) =>
       supabase
@@ -50,6 +54,8 @@ export async function listProducts(): Promise<Product[]> {
         .order('stock_code')
         .order('id')
         .range(from, to),
+    undefined,
+    onProgress,
   )
   return rows.map(mapProduct)
 }

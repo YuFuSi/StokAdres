@@ -105,6 +105,35 @@ export async function findActiveAddresses(productIds: string[]): Promise<Map<str
   return byProductId
 }
 
+/**
+ * Verilen ürünlerin barkodlarını getirir. Anahtar: ürün id'si.
+ *
+ * `listProducts()` de barkodları gömülü döndürür ama bunun için 94.900 ürünün
+ * TAMAMINI çekmek gerekir. Elde zaten bir ürün kümesi varken (adres kayıtları,
+ * dışa aktarma satırları) yalnızca onların barkodunu istemek doğru olan.
+ */
+export async function findBarcodesByProductId(productIds: string[]): Promise<Map<string, string[]>> {
+  const unique = [...new Set(productIds)].filter(Boolean)
+  const byProductId = new Map<string, string[]>()
+  if (unique.length === 0) return byProductId
+
+  type Row = { product_id: string; barcode: string }
+  for (const idChunk of chunk(unique)) {
+    const { data, error } = await supabase
+      .from('product_barcodes')
+      .select('product_id, barcode')
+      .in('product_id', idChunk)
+      .order('barcode')
+    if (error) throw new Error(`Barkodlar aranırken hata: ${error.message}`)
+    for (const row of (data ?? []) as unknown as Row[]) {
+      const list = byProductId.get(row.product_id)
+      if (list) list.push(row.barcode)
+      else byProductId.set(row.product_id, [row.barcode])
+    }
+  }
+  return byProductId
+}
+
 /** Verilen barkodların hangi ürüne ait olduğunu getirir. Anahtar: normalize barkod. */
 export async function findProductIdsByBarcodes(barcodes: string[]): Promise<Map<string, string>> {
   const normalized = [...new Set(barcodes.map((barcode) => barcode.trim().toLowerCase()).filter(Boolean))]

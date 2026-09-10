@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronLeft, ChevronRight, MapPin, MoreHorizontal, Plus, Search } from 'lucide-react'
-import { supabase } from '../lib/supabase'
 import { addressRecordService } from '../data/localData'
 import { DuplicateActiveAddressError } from '../services/addressRecordService'
 import { queryProducts, type ProductListItem } from '../services/productService'
+import { findBarcodesByProductId } from '../services/productLookup'
 import type { AddressRecord } from '../types/addressRecord'
 import type { Product } from '../types/product'
 import './AddressesPage.css'
@@ -47,7 +47,7 @@ export function AddressesPage({ onBackToDashboard, initialSelectedRecordId = nul
   const loadData = async (keepRecordId?: string | null) => {
     const nextRecords = await addressRecordService.list()
     setRecords(nextRecords)
-    setBarcodesByProductId(await findBarcodesFor(nextRecords))
+    setBarcodesByProductId(await findBarcodesByProductId(nextRecords.map((record) => record.productId)))
     if (keepRecordId !== undefined) setSelectedRecordId(keepRecordId)
   }
 
@@ -59,7 +59,7 @@ export function AddressesPage({ onBackToDashboard, initialSelectedRecordId = nul
         if (!isMounted) return
         setRecords(nextRecords)
         setSelectedRecordId(initialSelectedRecordId)
-        const barcodes = await findBarcodesFor(nextRecords)
+        const barcodes = await findBarcodesByProductId(nextRecords.map((record) => record.productId))
         if (isMounted) setBarcodesByProductId(barcodes)
       })
       .catch((reason: unknown) => {
@@ -329,25 +329,6 @@ function formatDate(value: string): string {
  * kullanılıyor. Tüm ürünleri çekmek yerine (94.894 üründe ~95 istek) sadece
  * listedeki ürünlerin barkodları alınıyor.
  */
-async function findBarcodesFor(records: AddressRecord[]): Promise<Map<string, string[]>> {
-  const byProductId = new Map<string, string[]>()
-  const productIds = [...new Set(records.map((record) => record.productId))]
-  if (productIds.length === 0) return byProductId
-
-  const { data, error } = await supabase
-    .from('product_barcodes')
-    .select('product_id, barcode')
-    .in('product_id', productIds)
-  if (error) return byProductId
-
-  for (const row of (data ?? []) as unknown as Array<{ product_id: string; barcode: string }>) {
-    const list = byProductId.get(row.product_id)
-    if (list) list.push(row.barcode)
-    else byProductId.set(row.product_id, [row.barcode])
-  }
-  return byProductId
-}
-
 /**
  * Ürün seçici. Eskiden buradaki `<select>` tüm ürünleri `<option>` olarak
  * basıyordu; 94.894 üründe bu hem imkânsız hem de kullanılamaz (kimse o listeyi
