@@ -19,7 +19,6 @@ const choices: Array<{ id: ImportOperation; title: string; description: string; 
   { id: 'names', title: 'Stok İsimlerini Güncelle', description: 'Mevcut stok kartlarındaki isimleri güncelleyin.', columns: 'Stok Kodu · Stok Adı' },
   { id: 'barcodes', title: 'Barkod Ata', description: 'Mevcut ürünlere benzersiz barkodlar atayın.', columns: 'Stok Kodu · Barkod' },
   { id: 'addresses', title: 'Adres & Koli Aktar', description: 'Fiziksel adres ve koli kayıtlarını güncelleyin.', columns: 'Stok Kodu · Adres · Koli Adedi' },
-  { id: 'caba', title: 'CABA ile Adres Bul', description: 'CABA stok kodlarını depo konumlarıyla eşleştirin.', columns: 'Stok Kodu · CABA Miktarı' },
 ]
 
 export function OperationsPage({ page }: Props) { if (page === 'import') return <ImportHub/>; if (page === 'export') return <ExportHub/>; if (page === 'find') return <Finder/>; return <Settings/> }
