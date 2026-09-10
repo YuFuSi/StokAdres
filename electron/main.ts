@@ -1,6 +1,8 @@
-import { app, BrowserWindow, dialog, ipcMain } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, Menu, shell } from 'electron'
 import fs from 'node:fs/promises'
 import path from 'node:path'
+
+const isDev = process.argv.includes('--dev')
 
 const createWindow = (): void => {
   const window = new BrowserWindow({
@@ -16,7 +18,25 @@ const createWindow = (): void => {
     }
   })
 
-  if (process.argv.includes('--dev')) {
+  // Uygulama tek bir yerel sayfadan ibaret. Yeni pencere acmasi gereken hicbir
+  // akis yok; window.open cagrisi ancak beklenmedik/enjekte bir icerikten
+  // gelebilir. Harici baglantilar varsayilan tarayiciya devredilir, uygulama
+  // penceresinde acilmaz.
+  window.webContents.setWindowOpenHandler(({ url }) => {
+    if (url.startsWith('https://')) void shell.openExternal(url)
+    return { action: 'deny' }
+  })
+
+  // Renderer'in kendi kaynagindan baska bir yere gitmesi beklenen bir davranis
+  // degil. Gezinme denemesi engellenir; https ise disariya devredilir.
+  window.webContents.on('will-navigate', (event, url) => {
+    const allowed = isDev ? url.startsWith('http://localhost:5173') : url.startsWith('file://')
+    if (allowed) return
+    event.preventDefault()
+    if (url.startsWith('https://')) void shell.openExternal(url)
+  })
+
+  if (isDev) {
     window.loadURL('http://localhost:5173')
   } else {
     window.loadFile(path.join(__dirname, '../dist/index.html'))
@@ -24,6 +44,12 @@ const createWindow = (): void => {
 }
 
 app.whenReady().then(() => {
+  // Uretimde varsayilan Electron menusu (Reload, Toggle DevTools, Zoom...)
+  // kaldirilir: uygulamanin kendi navigasyonu var ve bu menu Harun abinin
+  // yanlislikla gelistirici araclarini acmasindan baska bir ise yaramiyor.
+  // Gelistirmede duruyor.
+  if (!isDev) Menu.setApplicationMenu(null)
+
   ipcMain.handle('save-csv', async (_event, payload: { suggestedName: string; content: string }) => {
     const result = await dialog.showSaveDialog({
       title: 'CSV dışa aktar',
