@@ -15,7 +15,7 @@
 .audit-row { color: var(--muted); cursor: pointer; }
 .audit-row:hover, .audit-row--selected { background: var(--teal-soft); }
 .audit-state { margin: 36px 18px; padding: 42px 20px; color: var(--muted); text-align: center; font-size: 13px; }
-.audit-state--error { color: #b4483e; }
+.audit-state--error { color: var(--danger); }
 .audit-detail { position: sticky; top: 18px; padding: 20px; }
 .audit-detail__header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding-bottom: 14px; border-bottom: 1px solid var(--line); }
 .audit-detail__header h2 { margin-top: 6px; font-size: 17px; }

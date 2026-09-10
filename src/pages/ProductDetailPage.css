@@ -23,7 +23,7 @@
 .product-barcode-block { display: flex; flex-direction: column; gap: 8px; }
 .product-barcode-list { display: flex; flex-direction: column; gap: 6px; margin: 0; padding: 0; list-style: none; }
 .product-barcode-list li { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 9px; background: #f5f8f8; border-radius: 4px; color: var(--ink); font-size: 12px; }
-.product-barcode-list button { padding: 0; color: #b4483e; background: transparent; border: 0; font-size: 10px; cursor: pointer; }
+.product-barcode-list button { padding: 0; color: var(--danger); background: transparent; border: 0; font-size: 10px; cursor: pointer; }
 .product-barcode-form { display: flex; gap: 7px; }
 .product-barcode-form input { min-width: 0; flex: 1; }
 .product-barcode-form .button { white-space: nowrap; }
@@ -35,7 +35,7 @@
 .product-readonly-dates strong { color: var(--ink); font-size: 11px; }
 .product-detail-empty, .product-detail-state { margin: 26px 0 0; padding: 30px 15px; color: var(--muted); text-align: center; font-size: 12px; }
 .product-detail-state { margin: 120px auto 0; }
-.product-detail-state--error { color: #b4483e; }
+.product-detail-state--error { color: var(--danger); }
 .product-address-list { display: flex; flex-direction: column; gap: 8px; padding-top: 16px; }
 .product-address-row { display: grid; grid-template-columns: minmax(0, 1.2fr) 55px 70px minmax(90px, .8fr) auto; align-items: center; gap: 10px; padding: 11px; background: #f5f8f8; border-radius: 5px; cursor: pointer; }
 .product-address-row:hover { background: #eaf3f2; }
@@ -44,7 +44,7 @@
 .product-address-row strong { overflow: hidden; color: var(--ink); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
 .product-address-actions { align-items: flex-end; flex-direction: row !important; gap: 8px !important; }
 .product-address-actions button { padding: 0; color: var(--teal); background: transparent; border: 0; font-size: 10px; cursor: pointer; }
-.product-address-actions button:last-child { color: #b4483e; }
+.product-address-actions button:last-child { color: var(--danger); }
 .product-address-form { display: flex; flex-direction: column; gap: 10px; margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--line); }
 .product-address-form .record-actions { margin-top: 2px; }
 .product-address-form .button { padding: 7px 10px; font-size: 11px; }
@@ -70,7 +70,7 @@
 .back-link { color: var(--muted); font-weight: 600; }
 .product-detail-header { margin-top: 22px; padding-bottom: 18px; border-bottom: 1px solid var(--line); }
 .product-detail-header h1 { font-size: 30px; letter-spacing: -.035em; }
-.product-detail-header__code { margin-top: 7px; color: #526061; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+.product-detail-header__code { margin-top: 7px; color: var(--muted); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
 .product-detail-metrics { gap: 0; margin-top: 0; padding: 16px 0; border-bottom: 1px solid var(--line); }
 .product-detail-metrics > div { min-height: 52px; padding: 0 18px; background: transparent; border: 0; border-radius: 0; }.product-detail-metrics > div:first-child { padding-left: 0; }.product-detail-metrics > div + div { border-left: 1px solid var(--line); }
 .product-detail-metrics strong { margin-top: 6px; font-size: 21px; }

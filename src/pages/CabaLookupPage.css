@@ -21,7 +21,7 @@
 .caba-actions .button { display: inline-flex; align-items: center; gap: 7px; }
 .caba-actions .button:disabled { opacity: .5; cursor: not-allowed; }
 
-.caba-error { margin: 14px 0 0; color: #b4483e; font-size: 13px; }
+.caba-error { margin: 14px 0 0; color: var(--danger); font-size: 13px; }
 .caba-hint { display: flex; align-items: flex-start; gap: 8px; margin: 18px 0 0; padding-top: 16px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; line-height: 1.6; }
 .caba-hint svg { flex: 0 0 auto; margin-top: 2px; color: var(--teal); }
 
