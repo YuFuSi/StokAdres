@@ -52,14 +52,18 @@ src/App.tsx               Router YOK — state tabanlı ekran switch'i
 src/layouts/AppLayout     Sidebar (10 link) + Ctrl+K komut paleti
 src/lib/supabase.ts       createClient<Database> (tipli)
 src/lib/pagination.ts     fetchAllRows() — PostgREST 1000 satır sınırını aşar
-src/pages/                10 sayfa
+src/pages/                9 sayfa
 src/services/             Veri erişim katmanı (UI supabase'i doğrudan import etmez)
 src/services/*.test.ts    Vitest testleri
-src/import/               ⚫ ÖLÜ modül (bkz. Tuzaklar #1)
 src/data/localData.ts     addressRecordService singleton'ı burada
 scripts/bulk-load-products.mjs  Toplu ürün yükleme (README yanında)
-supabase/migrations/      13 dosya, hepsi canlıya uygulanmış
+supabase/migrations/      14 dosya
+.github/workflows/ci.yml  typecheck + test + build
 ```
+
+**Servis katmanı sınırı korunmalı:** *UI hiçbir yerde `supabase`'i doğrudan
+import etmez.* 95k'ya geçişi mümkün kılan şey buydu — `listProducts()`'ın içi
+sunucu tarafına taşındığında ekranlar hiç değişmedi.
 
 ### Ekran durumları
 | Ekran | `AppPage` | Durum |
@@ -73,24 +77,34 @@ supabase/migrations/      13 dosya, hepsi canlıya uygulanmış
 | Genel Bakış | `dashboard` | 🟡 `dashboard_summary` view'ından tek sorgu |
 | Adres Bul | `find` | 🟡 Arama iyileşti ama **tüm ürünleri istemciye çekiyor** (bkz. Tuzak #4) |
 | Dışa Aktar | `export` | 🟡 Aynı ölçek sorunu (Tuzak #4) |
-| Çakışmalar | `conflicts` | 🟡 UI tam, ama **hiç veri almıyor** (Tuzak #2) |
-| Ayarlar | `settings` | 🔴 Sadece tema butonu |
+| Ayarlar | `settings` | 🔴 Sadece tema butonu (artık kalıcı) |
 
 ---
 
 ## ⚠️ TUZAKLAR — Bunları Bilmeden Kod Yazma
 
-### 1. Ölü kod: `HomePage.tsx` ve `src/import/*`
-`src/pages/HomePage.tsx` (776 satır) artık **App.tsx'ten import bile edilmiyor**
-— tamamen yetim. Yalnızca ondan çağrılan `src/import/*`, `dataBackup.ts`,
-`recentProducts.ts`, `ActionCard.tsx` de erişilemez.
-**İstisna:** `productSearch.ts` canlı — `AppLayout` (Ctrl+K) ve `Finder` kullanıyor.
+### 1. Ölü kod temizlendi — geri getirme
+Faz 3.1'de ~1.700 satır silindi: `HomePage.tsx`, `src/import/*`,
+`conflictService.ts`, `ConflictsPage`, `dataBackup.ts`, `recentProducts.ts`,
+`demoData.ts`, `types/conflict.ts`, `ActionCard.tsx`. Hiçbiri erişilebilir
+değildi. Git geçmişinde duruyorlar; ihtiyaç olursa oradan bakılır.
 
-### 2. Conflict sistemi hâlâ beslenmiyor
-`address_conflicts` tablosu, RPC'leri ve `ConflictsPage` tam çalışır durumda,
-ama **conflict üreten hiçbir canlı kod yolu yok.** Yeni `operationImportApply.ts`
-de conflict oluşturmuyor. Tek üretici erişilemez `src/import/importService.ts`.
-Sonuç: Çakışmalar ekranı her zaman boş.
+`AddressRecordService.replaceAll` / `.clear` de silindi — yıkıcı RPC'leri
+çağırıyorlardı, yetkileri Sprint 0.1'de geri alınmıştı.
+
+### 2. Çakışma sistemi istemciden kaldırıldı (bilinçli karar)
+`address_conflicts` **tablosu ve migration'ları DB'de duruyor** (0 satır), ama
+istemci kodu yok. Gerekçe:
+- 6+ aylık kullanımda hiç conflict kaydı üretilmedi; üreten kod yolu zaten
+  erişilemezdi.
+- Tek operatörlü bir uygulamada 500 satırlık bir yapıştırmanın çakışmalarını
+  ikinci bir ekranda tek tek çözmek, kaçınılmak istenen Excel yavaşlığının
+  aynısı olurdu. Karar yapıştırma anında veriliyor — `ImportPage`'deki koli
+  çakışması çubuğu.
+- "Ne değişti" izi `audit_logs`'ta eski/yeni değerle zaten duruyor.
+
+**Yeniden ayrı bir çakışma ekranı ekleme.** İhtiyaç çıkarsa önizleme içinde
+çöz. Tablo geri alınabilir olsun diye duruyor.
 
 ### 3. 95k ölçeği — istemciye tüm tabloyu çekme
 `listProducts()` (`fetchAllRows` ile) ~95 HTTP isteği yapıp 95.000 satırı
@@ -118,10 +132,22 @@ Bu değer **hiçbir zaman eşleşmez ve hata da vermez** — sonuç sessizce
 - **Yalnızca istemci içi görüntüleme/sıralama/filtreleme** → `tr-TR` uygun
   (`productSearch.ts`, tablo sıralamaları böyle).
 
-### 6. `createProduct` gerçek transaction değil
-Telafi (compensating) mantığı var: barkod yazımı patlarsa
-`rollbackCreatedProduct()` ürünü siler. Silme de patlarsa barkodsuz yetim ürün
-kalır ve konsola loglanır. Tek transaction isteniyorsa RPC gerekir.
+### 6. Yazma yollarında gerçek transaction yok — telafi deseni kullanılıyor
+Bu ölçek ve tek kullanıcı için bilinçli tercih; RPC'ye taşımak gerekmiyor.
+Mevcut telafiler:
+- `createProduct`: barkod yazımı patlarsa `rollbackCreatedProduct()` ürünü siler.
+- `replaceProductBarcodes`: eski barkodlar önce okunur, INSERT patlarsa geri
+  yazılır (`restoreProductBarcodes`). Bu olmadan eski barkodlar kalıcı
+  kaybolurdu.
+- `AddressRecordService.create`: ürünü bu çağrı oluşturduysa
+  (`findOrCreateProduct().wasCreated`) ve adres kaydı patlarsa ürün silinir.
+
+**Yeni yazma yolu eklerken aynı deseni uygula.** Telafinin kendisi de
+patlayabilir; o durumda konsola loglanır, çağrı bozulmaz.
+
+⚠️ Telafiler `products` üzerinde DELETE yetkisine bağlı. Faz 3.2'deki politika
+bunu **boş ürünlerle** (adresi ve barkodu olmayan) sınırlar — telafi çalışır,
+zincirleme silme engellenir. Politikayı büsbütün kaldırma.
 
 ### 7. `base: './'` zorunlu
 [vite.config.ts](vite.config.ts) — kaldırılırsa production/paketlenmiş uygulama
@@ -131,7 +157,21 @@ beyaz ekran verir (`file://` + mutlak yol).
 Ama `package.json` `main` alanı oraya bakıyor. Build çıktısı, her build'de
 yeniden üretiliyor.
 
-### 9. `src/types/database.ts` otomatik üretilir
+### 9. CSS'te sabit hex yazma — token kullan
+Koyu tema yalnızca `:root[data-theme='dark']` içindeki `--*` token'larını
+değiştirir. Sayfa CSS'ine literal hex yazarsan koyu temada olduğu gibi kalır.
+Faz 3.3'te `.address-cell { color:#273131 }` yüzünden ADRES kolonu **1.17:1**
+kontrasttaydı (okunmuyordu).
+
+Kullan: `--ink`, `--muted`, `--teal`, `--danger`, `--success`, `--warning`,
+`--page`, `--surface`, `--surface-muted`, `--line`.
+Yeni renk eklerken **koyu karşılığını da** `:root[data-theme='dark']`'a yaz.
+İstisna: `@media print` blokları — kâğıt her zaman beyaz, orada siyah doğru.
+
+`global.css` tek bir `:root` bloğu içerir. Eskiden üç rakip blok vardı; ikinci
+bir tane ekleme.
+
+### 10. `src/types/database.ts` otomatik üretilir
 Şema değişince yenilenmeli: `generate_typescript_types` (Supabase MCP) veya
 `supabase gen types typescript --project-id ryuguxxnmccybquqigji`.
 Üreteç CHECK constraint'lerini ifade edemez (`conflict_type: string` gelir);
@@ -167,9 +207,16 @@ Satır sayıları 2026-09-10 anlıkdır; yapı sabittir.
 
 ### Kritik index'ler
 ```sql
-products_stock_code_unique                UNIQUE (stock_code)
+-- Benzersizlik
+products_stock_code_unique                UNIQUE (stock_code)          -- ham, lower(trim()) DEĞİL
 product_barcodes_barcode_unique           UNIQUE (lower(trim(barcode)))
 idx_address_records_unique_active_address UNIQUE (product_id, lower(trim(address))) WHERE is_active
+
+-- Arama (PR #2, pg_trgm 1.6)
+idx_products_stock_code_trgm              GIN (stock_code gin_trgm_ops)
+idx_products_stock_name_trgm              GIN (stock_name gin_trgm_ops)
+idx_product_barcodes_barcode_trgm         GIN (barcode gin_trgm_ops)
+idx_products_stock_code_normalized        btree (lower(trim(stock_code)))
 ```
 
 ### FK davranışları
@@ -179,22 +226,25 @@ product_barcodes.product_id → products(id) ON DELETE CASCADE   ⚠️
 address_conflicts.product_id / existing_record_id → ON DELETE SET NULL
 audit_logs.product_id       → ON DELETE SET NULL
 ```
-⚠️ `products` DELETE anon'a açık + CASCADE → **tek ürün silme, tüm adres ve
-barkod kayıtlarını da siler.** Uygulama `deleteProduct` implement etmiyor ama
-RLS policy açık.
+⚠️ CASCADE nedeniyle bir ürünü silmek adres ve barkod kayıtlarını da siler.
+Faz 3.2 migration'ı `products` DELETE politikasını **yalnızca boş ürünlerle**
+(adresi ve barkodu olmayan) sınırlar: telafi yolları çalışır, zincirleme silme
+engellenir.
 
 ### RLS özeti
-- `products`, `product_barcodes`, `address_records` → anon'a **tam CRUD** (`using true`)
+- `products` → anon'a SELECT/INSERT/UPDATE serbest; **DELETE yalnızca boş ürün** (3.2)
+- `product_barcodes`, `address_records` → anon'a **tam CRUD** (`using true`)
 - `audit_logs`, `address_conflicts` → anon'a **sadece SELECT**
 
 ### Fonksiyon yetkileri
 | Fonksiyon | anon EXECUTE |
 |---|---|
-| `clear_address_records` / `restore_address_records` | ❌ (Sprint 0.1'de revoke edildi) |
+| `clear_address_records` / `restore_address_records` | ❌ (Sprint 0.1) |
 | `write_audit_log` | ❌ |
-| `create_address_conflict` / `resolve_address_conflict` | ✅ (tasarım gereği) |
-| `search_products` | ✅ (tasarım gereği) |
-| trigger fonksiyonları (4 adet) | ✅ ⚠️ gereksiz yüzey |
+| `create_address_conflict` / `resolve_address_conflict` | ❌ (Faz 3.2) |
+| trigger fonksiyonları (4 adet) | ❌ (Faz 3.2) |
+| `search_products` | ✅ SECURITY INVOKER, tasarım gereği |
+| `audit_operation_id` / `set_updated_at` | ✅ zararsız, `search_path` sabitlendi (3.2) |
 
 ### Trigger'lar
 ```
@@ -211,22 +261,24 @@ address_conflicts   → address_conflicts_audit_trigger
 | # | Sev | Sorun |
 |---|---|---|
 | 1 | 🔴 | **`Finder` ve `ExportHub` 95k satırı istemciye çekiyor** (Tuzak #4) |
-| 2 | 🔴 | **Auth yok** — anon key installer bundle'ında, anon tüm tablolara yazabiliyor |
-| 3 | 🟠 | Conflict sistemi hiç tetiklenmiyor (Tuzak #2) |
-| 4 | 🟠 | `createProduct` gerçek transaction değil (Tuzak #6) |
-| 5 | 🟡 | Adresten ürün bulma (ters arama) yok; barkod okuyucu akışı yok |
-| 6 | 🟡 | 14+ `as unknown as` cast — iç içe ilişki seçimlerinde nullable uyumsuzluğu |
-| 7 | 🟡 | Trigger fonksiyonları anon'a RPC olarak açık (Supabase linter) |
-| 8 | 🟡 | `set_updated_at` / `audit_operation_id` mutable search_path |
-| 9 | 🟡 | CSP yok, installer imzasız, ikon yok |
-| 10 | 🟢 | Ölü kod: `HomePage.tsx` + `src/import/*` + `dataBackup` + `recentProducts` + `ActionCard` |
-| 11 | 🟢 | ESLint yok, CI yok (test altyapısı artık **var**: vitest, 21 test) |
+| 2 | 🔴 | **Auth yok** — anon key installer bundle'ında, anon `products`/`address_records`/`product_barcodes`'a yazabiliyor. Tek kullanıcı/tek makine olduğu için bilinçli ertelendi; ikinci makine çıkarsa öne alınmalı |
+| 3 | 🟡 | `AddressesPage` sayfalanmıyor — 2.000+ satırı tek seferde DOM'a basıyor |
+| 4 | 🟡 | Adresten ürün bulma (ters arama) yok; barkod okuyucu akışı yok |
+| 5 | 🟡 | `as unknown as` cast'leri — iç içe ilişki/view seçimlerinde nullable uyumsuzluğu |
+| 6 | 🟡 | `pg_trgm` public şemada (Supabase linter). Taşımak 95k satırda GIN index'leri yeniden kurmayı gerektirir; bilinçli bırakıldı |
+| 7 | 🟢 | Installer imzasız, uygulama ikonu yok (Faz 3.8 — ikon dosyası kullanıcıdan bekleniyor) |
+| 8 | 🟢 | ESLint yok. Test (vitest) ve CI **var** |
 
 ---
 
 ## Çalışma Kuralları
 
-- Mevcut mimariyi yeniden yazma; sprint kapsamı dışına çıkma.
+- **Mimari hakkında:** "mevcut mimariyi yeniden yazma" kuralı 1.677 satırlık
+  bir uygulama için yazılmıştı ve o bağlamda doğruydu. 95.000 satırda gerekçesi
+  değişti — veri erişim katmanı çekinmeden sunucu tarafına taşındı (PR #2).
+  Bugünkü kural: **servis katmanı sınırını koru** (UI supabase'i doğrudan
+  import etmez), servislerin *içini* ölçek gerektirdiğinde değiştir. Ekranları
+  ve `App.tsx`'teki state switch'ini gereksiz yere yeniden yazma.
 - DB değişikliği **her zaman** migration üzerinden. `db push`/`db reset` yok.
 - Canlı DB'yi elle değiştirme; migration yaz, kullanıcı uygulasın.
 - Emin olmadığın şemayı tahmin etme — önce `execute_sql` ile teşhis et.
@@ -326,3 +378,44 @@ rollback'i eklendi.
 
 **Sonraki adım önerisi:** Açık Sorun #1 — `Finder` ve `ExportHub`'ı sunucu
 tarafı arama/akışa taşımak. En görünür performans kazancı orada.
+
+## 2026-09-10 — Faz 3: Hatalar ve cila
+Branch `chore/phase-3-cleanup-and-hardening`. Plan başka bir makinedeki
+oturumda yazılmıştı; Faz 1 ve 2 PR #2 ile girmişti, Faz 3 hiç başlamamıştı.
+
+**3.1 — Ölü kod (~1.700 satır silindi).** Detay: Tuzak #1 ve #2.
+
+**3.3 — Koyu tema.** Plandaki teşhis ("üç rakip `:root` bloğu") kök sebep
+değildi; asıl sorun sayfa CSS'lerindeki sabit hex renklerdi. Çalışan uygulamada
+CDP ile ölçüldü: `.address-cell` **1.17:1 → 13.66:1**. 34 sabit renk token'a
+bağlandı, `--danger`/`--success`/`--warning` eklendi (hepsi iki temada da
+≥4.5:1, ölçüldü). `@media print` blokları dokunulmadı. `:root` blokları teke
+indirildi. Tema artık `localStorage`'da kalıcı — bu, hatayı maskeleyen şeydi.
+
+**3.4 — Stoklar layout.** `.stocks-layout--list-only` ile media query kuralı
+aynı özgüllükteydi ve media query sonra geldiği için kazanıyordu → 821–1050px
+arası 320px hayalet kolon. Pencerenin `minWidth`'i 900, tam bandın içinde.
+
+**3.5 — Uyuyan veri kaybı yolları.** Detay: Tuzak #6.
+
+**3.6/3.7** — Çift CSV üreticisi birleştirildi; `save-file` IPC'sinde encoding
+beyaz listesi.
+
+**3.9 — Electron sertleştirme.** CSP (yalnızca üretim derlemesinde, Vite
+plugin), `setWindowOpenHandler`, `will-navigate`, üretimde varsayılan menü
+kaldırıldı. Paketlenmemiş üretim Electron'unda doğrulandı: konsol temiz, CSP
+ihlali yok, Supabase ve Google Fonts geçiyor.
+
+**3.10 — CI** eklendi: typecheck + test + build.
+
+**3.2 — DB yüzey daraltma** migration'ı yazıldı
+(`20260910200000_narrow_database_surface.sql`). ⚠️ **Plandaki bir iddia
+yanlıştı:** "uygulama `deleteProduct` implement etmiyor → DELETE policy'sini
+kaldırmanın maliyeti sıfır". `rollbackCreatedProduct` ürün siliyor; politikayı
+düz kaldırmak telafi yollarını bozardı. Bunun yerine politika **boş ürünlerle**
+sınırlandı. 13 advisor bulgusundan 12'si kapanır (`pg_trgm` bilerek bırakıldı).
+
+**3.8 — Uygulama ikonu yapılmadı.** Marka varlığı üretmek benim işim değil;
+kullanıcıdan 512×512 PNG veya `.ico` bekleniyor.
+
+**3.11 — Bu dosya** Faz 3 gerçeğine göre güncellendi.
