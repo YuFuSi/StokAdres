@@ -10,13 +10,23 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+# src/lib/supabase.ts, VITE_SUPABASE_* eksikse MODUL YUKLENIRKEN hata firlatir
+# (Sprint 0.2; sessizce yanlis calismak yerine erken ve acik hata). Testler
+# yalnizca saf fonksiyonlari dogruluyor ama import zinciri
+# productLookup.test.ts -> productLookup.ts -> supabase.ts oldugu icin bu hata
+# CI'da testleri dusuruyordu. Asagidaki degerler yalnizca modulun kurulabilmesi
+# icin var; hicbir test ag cagrisi yapmiyor. GERCEK ANAHTAR DEGIL.
+env:
+  VITE_SUPABASE_URL: https://ci-placeholder.supabase.co
+  VITE_SUPABASE_ANON_KEY: ci-placeholder-anon-key
+
 jobs:
   verify:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
@@ -32,8 +42,5 @@ jobs:
       - name: Test
         run: npm test
 
-      # Renderer + Electron ana surec derlemesi. Ortam degiskeni gerekmiyor:
-      # VITE_* degerleri yalnizca calisma zamaninda okunuyor, derleme
-      # bunlarsiz da tamamlaniyor.
       - name: Build
         run: npm run build
