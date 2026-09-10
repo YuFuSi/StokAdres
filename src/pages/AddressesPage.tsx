@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { MapPin, MoreHorizontal, Plus, Search } from 'lucide-react'
+import { supabase } from '../lib/supabase'
 import { addressRecordService } from '../data/localData'
 import { DuplicateActiveAddressError } from '../services/addressRecordService'
-import { listProducts } from '../services/productService'
+import { queryProducts, type ProductListItem } from '../services/productService'
 import type { AddressRecord } from '../types/addressRecord'
 import type { Product } from '../types/product'
 import './AddressesPage.css'
@@ -16,7 +17,7 @@ type AddressFilter = 'all' | 'active' | 'inactive'
 type AddressSort = 'address' | 'stock-code' | 'stock-name' | 'carton' | 'updated-at'
 
 export function AddressesPage({ onBackToDashboard, initialSelectedRecordId = null }: AddressesPageProps) {
-  const [products, setProducts] = useState<Product[]>([])
+  const [barcodesByProductId, setBarcodesByProductId] = useState<Map<string, string[]>>(new Map())
   const [records, setRecords] = useState<AddressRecord[]>([])
   const [selectedRecordId, setSelectedRecordId] = useState<string | null>(initialSelectedRecordId)
   const [query, setQuery] = useState('')
@@ -28,27 +29,33 @@ export function AddressesPage({ onBackToDashboard, initialSelectedRecordId = nul
   const [isFormOpen, setIsFormOpen] = useState(false)
   const [editingRecordId, setEditingRecordId] = useState<string | null>(null)
   const [selectedProductId, setSelectedProductId] = useState('')
+  const [selectedProduct, setSelectedProduct] = useState<ProductListItem | null>(null)
   const [address, setAddress] = useState('')
   const [cartonCount, setCartonCount] = useState('')
   const [isActive, setIsActive] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
 
+  // Bu ekran eskiden listProducts() ile TÜM ürünleri çekiyordu. 94.894 üründe
+  // bu 1.000'erlik 95 istek (~95 saniye) demek. Adres kayıtları stok kodu ve
+  // adını zaten gömülü getirdiği için ürün listesine gerek yok; yalnızca
+  // aramada kullanılan barkodlar, görünen kayıtların ürünleri için çekiliyor.
   const loadData = async (keepRecordId?: string | null) => {
-    const [nextProducts, nextRecords] = await Promise.all([listProducts(), addressRecordService.list()])
-    setProducts(nextProducts)
+    const nextRecords = await addressRecordService.list()
     setRecords(nextRecords)
+    setBarcodesByProductId(await findBarcodesFor(nextRecords))
     if (keepRecordId !== undefined) setSelectedRecordId(keepRecordId)
   }
 
   useEffect(() => {
     let isMounted = true
     setIsLoading(true)
-    Promise.all([listProducts(), addressRecordService.list()])
-      .then(([nextProducts, nextRecords]) => {
+    addressRecordService.list()
+      .then(async (nextRecords) => {
         if (!isMounted) return
-        setProducts(nextProducts)
         setRecords(nextRecords)
         setSelectedRecordId(initialSelectedRecordId)
+        const barcodes = await findBarcodesFor(nextRecords)
+        if (isMounted) setBarcodesByProductId(barcodes)
       })
       .catch((reason: unknown) => {
         console.error(reason)
@@ -57,15 +64,12 @@ export function AddressesPage({ onBackToDashboard, initialSelectedRecordId = nul
       .finally(() => { if (isMounted) setIsLoading(false) })
     return () => { isMounted = false }
   }, [])
-
-  const productsById = useMemo(() => new Map(products.map((product) => [product.id, product])), [products])
   const normalizedQuery = query.trim().toLocaleLowerCase('tr-TR')
   const filteredRecords = records
     .filter((record) => filter === 'all' || (filter === 'active' ? record.isActive : !record.isActive))
     .filter((record) => {
       if (!normalizedQuery) return true
-      const product = productsById.get(record.productId)
-      return [record.address, record.stockCode, record.stockName, ...(product?.barcodes ?? [])]
+      return [record.address, record.stockCode, record.stockName, ...(barcodesByProductId.get(record.productId) ?? [])]
         .some((value) => value.toLocaleLowerCase('tr-TR').includes(normalizedQuery))
     })
     .sort((left, right) => compareRecords(left, right, sort))
@@ -105,7 +109,7 @@ export function AddressesPage({ onBackToDashboard, initialSelectedRecordId = nul
 
   const saveRecord = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    const product = productsById.get(selectedProductId)
+    const product = selectedProduct
     const parsedCartonCount = Number(cartonCount)
     if (!product || !address.trim() || !Number.isInteger(parsedCartonCount) || parsedCartonCount < 1) {
       setFormError('Ürün, adres ve 1 veya daha fazla koli adedi girin.')
@@ -224,11 +228,11 @@ export function AddressesPage({ onBackToDashboard, initialSelectedRecordId = nul
             <div className="address-detail__meta"><span>Adres<strong>{selectedRecord.address}</strong></span><span>Koli<strong>{selectedRecord.cartonCount}</strong></span><span>Durum<StatusBadge isActive={selectedRecord.isActive} /></span></div>
             <div className="address-detail__dates"><span>Oluşturulma<strong>{formatDate(selectedRecord.createdAt)}</strong></span><span>Güncellenme<strong>{formatDate(selectedRecord.updatedAt)}</strong></span></div>
             <div className="address-detail__actions"><button className="button button--secondary" type="button" onClick={() => openEditForm(selectedRecord)}>Düzenle</button><button className="button button--danger" type="button" onClick={() => deleteRecord(selectedRecord)}>Sil</button></div>
-            {isFormOpen && <AddressForm products={products} selectedProductId={selectedProductId} setSelectedProductId={setSelectedProductId} address={address} setAddress={setAddress} cartonCount={cartonCount} setCartonCount={setCartonCount} isActive={isActive} setIsActive={setIsActive} isEditing={Boolean(editingRecordId)} isSaving={isSaving} error={formError} onSubmit={saveRecord} onCancel={closeForm} />}
+            {isFormOpen && <AddressForm selectedProduct={selectedProduct} setSelectedProduct={setSelectedProduct} setSelectedProductId={setSelectedProductId} address={address} setAddress={setAddress} cartonCount={cartonCount} setCartonCount={setCartonCount} isActive={isActive} setIsActive={setIsActive} isEditing={Boolean(editingRecordId)} isSaving={isSaving} error={formError} onSubmit={saveRecord} onCancel={closeForm} />}
           </aside>}
         </div>
       )}
-      {isFormOpen && !selectedRecord && <AddressForm products={products} selectedProductId={selectedProductId} setSelectedProductId={setSelectedProductId} address={address} setAddress={setAddress} cartonCount={cartonCount} setCartonCount={setCartonCount} isActive={isActive} setIsActive={setIsActive} isEditing={Boolean(editingRecordId)} isSaving={isSaving} error={formError} onSubmit={saveRecord} onCancel={closeForm} />}
+      {isFormOpen && !selectedRecord && <AddressForm selectedProduct={selectedProduct} setSelectedProduct={setSelectedProduct} setSelectedProductId={setSelectedProductId} address={address} setAddress={setAddress} cartonCount={cartonCount} setCartonCount={setCartonCount} isActive={isActive} setIsActive={setIsActive} isEditing={Boolean(editingRecordId)} isSaving={isSaving} error={formError} onSubmit={saveRecord} onCancel={closeForm} />}
     </main>
   )
 }
@@ -242,8 +246,8 @@ function StatusBadge({ isActive }: { isActive: boolean }) {
 }
 
 type AddressFormProps = {
-  products: Product[]
-  selectedProductId: string
+  selectedProduct: ProductListItem | null
+  setSelectedProduct: (product: ProductListItem | null) => void
   setSelectedProductId: (value: string) => void
   address: string
   setAddress: (value: string) => void
@@ -261,7 +265,11 @@ type AddressFormProps = {
 function AddressForm(props: AddressFormProps) {
   return <form className="address-form-panel" onSubmit={props.onSubmit}>
     <span className="selected-product__label">{props.isEditing ? 'Adres kaydını düzenle' : 'Yeni adres kaydı'}</span>
-    <label>Stok kodu / stok<select value={props.selectedProductId} onChange={(event) => props.setSelectedProductId(event.target.value)} disabled={props.isEditing}><option value="">Stok seçin</option>{props.products.map((product) => <option value={product.id} key={product.id}>{product.stockCode} · {product.stockName}</option>)}</select></label>
+    <ProductPicker
+      selected={props.selectedProduct}
+      onSelect={(product) => { props.setSelectedProduct(product); props.setSelectedProductId(product?.id ?? '') }}
+      disabled={props.isEditing}
+    />
     <label>Adres<input value={props.address} onChange={(event) => props.setAddress(event.target.value)} placeholder="Örn. A1-1" /></label>
     <label>Koli adedi<input type="number" min="1" step="1" value={props.cartonCount} onChange={(event) => props.setCartonCount(event.target.value)} placeholder="Örn. 15" /></label>
     <label className="address-active-toggle"><input type="checkbox" checked={props.isActive} onChange={(event) => props.setIsActive(event.target.checked)} /> Aktif kayıt</label>
@@ -284,4 +292,94 @@ function compareRecords(left: AddressRecord, right: AddressRecord, sort: Address
 
 function formatDate(value: string): string {
   return new Intl.DateTimeFormat('tr-TR', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(value))
+}
+
+/**
+ * Görünen adres kayıtlarının ürünlerine ait barkodlar. Yalnızca aramada
+ * kullanılıyor. Tüm ürünleri çekmek yerine (94.894 üründe ~95 istek) sadece
+ * listedeki ürünlerin barkodları alınıyor.
+ */
+async function findBarcodesFor(records: AddressRecord[]): Promise<Map<string, string[]>> {
+  const byProductId = new Map<string, string[]>()
+  const productIds = [...new Set(records.map((record) => record.productId))]
+  if (productIds.length === 0) return byProductId
+
+  const { data, error } = await supabase
+    .from('product_barcodes')
+    .select('product_id, barcode')
+    .in('product_id', productIds)
+  if (error) return byProductId
+
+  for (const row of (data ?? []) as unknown as Array<{ product_id: string; barcode: string }>) {
+    const list = byProductId.get(row.product_id)
+    if (list) list.push(row.barcode)
+    else byProductId.set(row.product_id, [row.barcode])
+  }
+  return byProductId
+}
+
+/**
+ * Ürün seçici. Eskiden buradaki `<select>` tüm ürünleri `<option>` olarak
+ * basıyordu; 94.894 üründe bu hem imkânsız hem de kullanılamaz (kimse o listeyi
+ * kaydırmaz). Yerine yazdıkça arayan bir seçici: sunucu tarafı arama, ilk 8
+ * sonuç.
+ */
+function ProductPicker({ selected, onSelect, disabled }: {
+  selected: ProductListItem | null
+  onSelect: (product: ProductListItem | null) => void
+  disabled?: boolean
+}) {
+  const [term, setTerm] = useState('')
+  const [results, setResults] = useState<ProductListItem[]>([])
+  const [isSearching, setIsSearching] = useState(false)
+  const timer = useRef<number | undefined>(undefined)
+
+  useEffect(() => () => window.clearTimeout(timer.current), [])
+
+  const search = (value: string) => {
+    setTerm(value)
+    window.clearTimeout(timer.current)
+    if (!value.trim()) { setResults([]); return }
+    timer.current = window.setTimeout(() => {
+      setIsSearching(true)
+      queryProducts({ query: value, pageSize: 8 })
+        .then((page) => setResults(page.items))
+        .catch((reason: unknown) => { console.error(reason); setResults([]) })
+        .finally(() => setIsSearching(false))
+    }, 250)
+  }
+
+  if (selected) {
+    return (
+      <label>Stok kodu / stok
+        <div className="product-picker__selected">
+          <span><strong>{selected.stockCode}</strong> · {selected.stockName}</span>
+          {!disabled && <button type="button" onClick={() => { onSelect(null); setTerm(''); setResults([]) }}>Değiştir</button>}
+        </div>
+      </label>
+    )
+  }
+
+  return (
+    <label>Stok kodu / stok
+      <input
+        value={term}
+        onChange={(event) => search(event.target.value)}
+        placeholder="Stok kodu veya isim yazın…"
+        disabled={disabled}
+        autoComplete="off"
+      />
+      {term.trim() && (
+        <div className="product-picker__results">
+          {isSearching && <span className="product-picker__state">Aranıyor…</span>}
+          {!isSearching && results.length === 0 && <span className="product-picker__state">Eşleşen stok yok.</span>}
+          {results.map((product) => (
+            <button type="button" key={product.id} onClick={() => onSelect(product)}>
+              <strong>{product.stockCode}</strong><small>{product.stockName}</small>
+            </button>
+          ))}
+        </div>
+      )}
+    </label>
+  )
 }

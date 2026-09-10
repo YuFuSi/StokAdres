@@ -1,37 +1,42 @@
 #!/usr/bin/env node
-// Tek seferlik toplu ürün yükleyici — UYGULAMANIN PARÇASI DEĞİLDİR.
+// Tek seferlik toplu ürün + barkod yükleyici — UYGULAMANIN PARÇASI DEĞİLDİR.
 //
 // NEDEN AYRI BİR SCRIPT
-// Uygulamanın içe aktarma ekranı ürün başına 3-4 HTTP isteği atar; 100.000
-// üründe bu saatler sürer. Tek seferlik ilk yükleme için doğru araç, toplu
-// insert yapan bu script. Supabase panelinin CSV yükleyicisi de kullanılabilir
-// ama 100k satırda zorlanır ve hangi satırın neden reddedildiğini söylemez.
+// Uygulamanın içe aktarma ekranı önizleme ve satır bazlı düzeltme için tasarlandı;
+// 100.000 satırlık ilk yükleme onun işi değil. Bu script toplu insert yapar ve
+// yalnızca bir kez çalıştırılır.
 //
 // KULLANIM
-//   node scripts/bulk-load-products.mjs urunler.csv --dry-run   # önce bunu
-//   node scripts/bulk-load-products.mjs urunler.csv
+//   node scripts/bulk-load-products.mjs "stok kaydı.xlsx" --dry-run   # önce bunu
+//   node scripts/bulk-load-products.mjs "stok kaydı.xlsx"
 //
-// CSV BEKLENTİSİ
-//   Başlık satırı zorunlu. Tanınan kolon adları (büyük/küçük harf farketmez):
-//     stok kodu / stock_code / stok_kodu / kod
-//     stok adı  / stock_name / stok_adi  / ürün adı
-//     barkod    / barcode                          (opsiyonel)
+// .xlsx, .xls ve .csv doğrudan okunur — Excel'i CSV'ye çevirmeye gerek yok.
+// (Bu, "düz CSV kaydedince Türkçe karakterler bozuluyor" tuzağını ortadan
+// kaldırır.)
 //
-//   ÖNEMLİ: Excel'den kaydederken "CSV UTF-8 (virgülle ayrılmış)" seçin.
-//   Düz "CSV" seçeneği Türkçe karakterleri bozar (Ç, Ğ, İ, Ö, Ş, Ü).
+// DOSYA YAPISI
+// Beklenen: her satır bir (stok, barkod) çifti. Aynı ürün birden fazla barkoda
+// sahipse birden fazla satırda görünür — hepsi yüklenir.
+//   Stok Kodu · Stok İsmi · Barkod
 //
 // GÜVENLİK
-//   .env dosyasındaki anon anahtarı kullanır. Yalnızca INSERT yapar; hiçbir
-//   satırı silmez veya güncellemez. Zaten kayıtlı stok kodlarını atlar.
+// .env'deki anon anahtarı kullanır. Yalnızca INSERT yapar; hiçbir satırı silmez
+// veya güncellemez. Zaten kayıtlı stok kodlarını ve barkodları atlar, bu yüzden
+// tekrar çalıştırmak güvenlidir.
 
-import { readFileSync } from 'node:fs'
+import { createRequire } from 'node:module'
+import { readFileSync, writeFileSync } from 'node:fs'
 import { createClient } from '@supabase/supabase-js'
 
+const require = createRequire(import.meta.url)
+const XLSX = require('xlsx')
+
 const BATCH_SIZE = 500
+const VALID_BARCODE = /^\d{6,14}$/
 
 const COLUMN_ALIASES = {
   stockCode: ['stok kodu', 'stock_code', 'stok_kodu', 'stockcode', 'kod', 'ürün kodu', 'urun kodu'],
-  stockName: ['stok adı', 'stok adi', 'stock_name', 'stok_adi', 'stockname', 'stok ismi', 'ürün adı', 'urun adi'],
+  stockName: ['stok ismi', 'stok adı', 'stok adi', 'stock_name', 'stok_adi', 'stockname', 'ürün adı', 'urun adi'],
   barcode: ['barkod', 'barcode', 'ean'],
 }
 
@@ -42,166 +47,218 @@ function readEnv() {
     const match = line.match(/^\s*([A-Z_]+)\s*=\s*(.*)\s*$/)
     if (match) values[match[1]] = match[2].trim().replace(/^["']|["']$/g, '')
   }
-  const url = values.VITE_SUPABASE_URL
-  const key = values.VITE_SUPABASE_ANON_KEY
-  if (!url || !key) throw new Error('.env icinde VITE_SUPABASE_URL ve VITE_SUPABASE_ANON_KEY bulunamadi.')
-  return { url, key }
-}
-
-/** Tirnakli alanlari ve alan icindeki satir sonlarini destekleyen CSV cozumleyici. */
-function parseCsv(text) {
-  const rows = []
-  let row = []
-  let field = ''
-  let inQuotes = false
-
-  for (let i = 0; i < text.length; i += 1) {
-    const char = text[i]
-    if (inQuotes) {
-      if (char === '"') {
-        if (text[i + 1] === '"') { field += '"'; i += 1 } else { inQuotes = false }
-      } else field += char
-      continue
-    }
-    if (char === '"') { inQuotes = true; continue }
-    if (char === ',' || char === ';' || char === '\t') { row.push(field); field = ''; continue }
-    if (char === '\n') { row.push(field); rows.push(row); row = []; field = ''; continue }
-    if (char === '\r') continue
-    field += char
+  if (!values.VITE_SUPABASE_URL || !values.VITE_SUPABASE_ANON_KEY) {
+    throw new Error('.env icinde VITE_SUPABASE_URL ve VITE_SUPABASE_ANON_KEY bulunamadi.')
   }
-  if (field !== '' || row.length > 0) { row.push(field); rows.push(row) }
-  return rows.filter((cells) => cells.some((cell) => cell.trim() !== ''))
+  return { url: values.VITE_SUPABASE_URL, key: values.VITE_SUPABASE_ANON_KEY }
 }
 
 function mapColumns(headerRow) {
-  const normalized = headerRow.map((header) =>
-    header.replace(/^﻿/, '').toLocaleLowerCase('tr-TR').replace(/[._-]/g, ' ').replace(/\s+/g, ' ').trim(),
-  )
+  const normalized = headerRow.map((h) =>
+    String(h).replace(/^﻿/, '').toLocaleLowerCase('tr-TR').replace(/[._-]/g, ' ').replace(/\s+/g, ' ').trim())
   const columns = {}
   for (const [key, aliases] of Object.entries(COLUMN_ALIASES)) {
-    const index = normalized.findIndex((header) => aliases.includes(header))
+    const index = normalized.findIndex((h) => aliases.includes(h))
     if (index >= 0) columns[key] = index
   }
   return { columns, normalized }
 }
 
-async function main() {
-  const [csvPath, ...flags] = process.argv.slice(2)
+// Postgres `lower()` ile ayni sonucu verir (DB collation en_US.UTF-8).
+// Turkce locale KULLANILMAZ: 'I'.toLocaleLowerCase('tr-TR') noktasiz 'ı' verir
+// ve hicbir zaman eslesmez.
+const norm = (value) => value.trim().toLowerCase()
+
+function main() {
+  const [filePath, ...flags] = process.argv.slice(2)
   const dryRun = flags.includes('--dry-run')
-  if (!csvPath) {
-    console.error('Kullanim: node scripts/bulk-load-products.mjs <dosya.csv> [--dry-run]')
+  if (!filePath) {
+    console.error('Kullanim: node scripts/bulk-load-products.mjs <dosya.xlsx> [--dry-run]')
     process.exit(1)
   }
+  return run(filePath, dryRun)
+}
 
-  const text = readFileSync(csvPath, 'utf8')
-  const rows = parseCsv(text)
-  if (rows.length < 2) throw new Error('Dosyada baslik ve en az bir veri satiri olmali.')
+async function run(filePath, dryRun) {
+  const workbook = XLSX.readFile(filePath, { raw: false })
+  const sheet = workbook.Sheets[workbook.SheetNames[0]]
+  if (!sheet) throw new Error('Dosyada okunabilir bir sayfa yok.')
+  const matrix = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: false })
+  if (matrix.length < 2) throw new Error('Dosyada baslik ve veri satiri yok.')
 
-  const { columns, normalized } = mapColumns(rows[0])
+  const { columns, normalized } = mapColumns(matrix[0])
   if (columns.stockCode === undefined || columns.stockName === undefined) {
     console.error('HATA: Zorunlu kolon bulunamadi.')
-    console.error('  Dosyadaki basliklar :', normalized.join(' | '))
-    console.error('  Gereken             : stok kodu, stok adi')
+    console.error('  Dosyadaki basliklar:', normalized.join(' | '))
+    console.error('  Gereken            : stok kodu, stok ismi')
     process.exit(1)
   }
-  console.log(`Kolonlar: stok kodu=${columns.stockCode}, stok adi=${columns.stockName}` +
-    (columns.barcode !== undefined ? `, barkod=${columns.barcode}` : ', barkod=yok'))
+  console.log(`Kolonlar: stok kodu=${columns.stockCode}, stok ismi=${columns.stockName}, barkod=${columns.barcode ?? 'yok'}`)
 
-  // 1) Ayristir ve dosya ici tekrarlari ele
-  const seen = new Map()
-  const invalid = []
-  const duplicates = []
-  for (let i = 1; i < rows.length; i += 1) {
-    const cells = rows[i]
-    const stockCode = (cells[columns.stockCode] ?? '').trim()
-    const stockName = (cells[columns.stockName] ?? '').trim()
-    const barcode = columns.barcode !== undefined ? (cells[columns.barcode] ?? '').trim() : ''
-    if (!stockCode || !stockName) { invalid.push({ line: i + 1, stockCode, stockName }); continue }
-    const key = stockCode.toLocaleLowerCase('tr-TR')
-    if (seen.has(key)) { duplicates.push({ line: i + 1, stockCode }); continue }
-    seen.set(key, { stock_code: stockCode, stock_name: stockName, barcode })
+  const rows = matrix.slice(1).map((cells, index) => ({
+    line: index + 2,
+    code: String(cells[columns.stockCode] ?? '').trim(),
+    name: String(cells[columns.stockName] ?? '').trim(),
+    barcode: columns.barcode === undefined ? '' : String(cells[columns.barcode] ?? '').trim(),
+  }))
+
+  const skipped = []
+  const note = (line, code, value, reason) => skipped.push({ line, code, value, reason })
+
+  // --- 1) Kolonlari yer degismis satirlari ele ---
+  // Bazi satirlarda stok kodu hucresinde barkod, barkod hucresinde stok kodu var.
+  // Olduğu gibi yuklenirse stok kodu barkod olan cop urunler olusur.
+  const isBarcodeLike = (value) => /^\d{12,14}$/.test(value)
+  const isStockCodeLike = (value) => /^Z[ÜU]C{1,2}\d+$/i.test(value)
+  const usable = []
+  for (const row of rows) {
+    if (isBarcodeLike(row.code) && isStockCodeLike(row.barcode)) {
+      note(row.line, row.code, row.barcode, 'Kolonlar yer degismis (kod hucresinde barkod)')
+      continue
+    }
+    if (!row.code || !row.name) {
+      note(row.line, row.code, row.name, 'Stok kodu veya ismi bos')
+      continue
+    }
+    usable.push(row)
   }
 
-  console.log(`\nDosya   : ${rows.length - 1} veri satiri`)
-  console.log(`Gecerli : ${seen.size}`)
-  if (invalid.length) console.log(`Eksik alanli (atlanacak): ${invalid.length}  ornek satir ${invalid.slice(0, 3).map((r) => r.line).join(', ')}`)
-  if (duplicates.length) console.log(`Dosya ici tekrar (atlanacak): ${duplicates.length}  ornek satir ${duplicates.slice(0, 3).map((r) => r.line).join(', ')}`)
+  // --- 2) Urunler (koda gore tekillestir) ---
+  const products = new Map()
+  for (const row of usable) {
+    const key = norm(row.code)
+    if (!products.has(key)) products.set(key, { code: row.code, name: row.name })
+  }
 
-  // 2) Veritabaninda zaten olanlari ele
+  // --- 3) Barkodlar ---
+  // Bozuk bicimli barkodlar TEMIZLENMEZ. Dosyadaki "Ç", "BARKOD ÇAKIŞIYOR" gibi
+  // ekler rastgele degil: birisi cakisan barkodlari elle isaretlemis. Temizlenirse
+  // 268 cakisma olusuyor; oldugu gibi atlaninca yalnizca 1 kaliyor.
+  const barcodeOwners = new Map()
+  for (const row of usable) {
+    if (!row.barcode) continue
+    if (!VALID_BARCODE.test(row.barcode)) {
+      note(row.line, row.code, row.barcode, 'Barkod bicimi gecersiz (6-14 rakam disi)')
+      continue
+    }
+    const key = norm(row.barcode)
+    if (!barcodeOwners.has(key)) barcodeOwners.set(key, { value: row.barcode, codes: new Set(), lines: [] })
+    barcodeOwners.get(key).codes.add(norm(row.code))
+    barcodeOwners.get(key).lines.push(row.line)
+  }
+
+  const barcodePairs = []
+  for (const [key, entry] of barcodeOwners) {
+    if (entry.codes.size > 1) {
+      note(entry.lines[0], [...entry.codes].join(' + '), entry.value, `Ayni barkod ${entry.codes.size} farkli urunde`)
+      continue
+    }
+    barcodePairs.push({ code: [...entry.codes][0], barcode: entry.value, key })
+  }
+
+  console.log('')
+  console.log(`Dosya satiri        : ${rows.length}`)
+  console.log(`Benzersiz urun      : ${products.size}`)
+  console.log(`Yuklenebilir barkod : ${barcodePairs.length}`)
+  console.log(`Atlanan kayit       : ${skipped.length}`)
+  if (skipped.length) {
+    const byReason = {}
+    for (const s of skipped) byReason[s.reason] = (byReason[s.reason] ?? 0) + 1
+    for (const [reason, count] of Object.entries(byReason)) console.log(`   - ${reason}: ${count}`)
+  }
+
+  // --- 4) Veritabaninda zaten olanlari ele ---
   const { url, key } = readEnv()
   const supabase = createClient(url, key)
 
-  console.log('\nMevcut stok kodlari okunuyor...')
-  const existing = new Set()
+  console.log('\nMevcut kayitlar okunuyor...')
+  const existingProducts = new Map()
   for (let from = 0; ; from += 1000) {
-    const { data, error } = await supabase.from('products').select('stock_code').order('stock_code').order('id').range(from, from + 999)
+    const { data, error } = await supabase.from('products').select('id, stock_code').order('stock_code').order('id').range(from, from + 999)
     if (error) throw new Error(`Mevcut urunler okunamadi: ${error.message}`)
-    for (const record of data ?? []) existing.add(record.stock_code.toLocaleLowerCase('tr-TR'))
+    for (const record of data ?? []) existingProducts.set(norm(record.stock_code), record.id)
     if ((data ?? []).length < 1000) break
   }
-  console.log(`Veritabaninda ${existing.size} urun var.`)
+  const existingBarcodes = new Set()
+  for (let from = 0; ; from += 1000) {
+    const { data, error } = await supabase.from('product_barcodes').select('barcode').order('barcode').range(from, from + 999)
+    if (error) throw new Error(`Mevcut barkodlar okunamadi: ${error.message}`)
+    for (const record of data ?? []) existingBarcodes.add(norm(record.barcode))
+    if ((data ?? []).length < 1000) break
+  }
+  console.log(`Veritabaninda ${existingProducts.size} urun, ${existingBarcodes.size} barkod var.`)
 
-  const toInsert = [...seen.values()].filter((record) => !existing.has(record.stock_code.toLocaleLowerCase('tr-TR')))
-  const alreadyThere = seen.size - toInsert.length
-  if (alreadyThere) console.log(`Zaten kayitli (atlanacak): ${alreadyThere}`)
-  console.log(`\nYUKLENECEK: ${toInsert.length} urun`)
+  const newProducts = [...products.values()].filter((p) => !existingProducts.has(norm(p.code)))
+  const newBarcodes = barcodePairs.filter((pair) => !existingBarcodes.has(pair.key))
+
+  console.log('')
+  console.log(`YAZILACAK URUN   : ${newProducts.length}  (${products.size - newProducts.length} zaten kayitli)`)
+  console.log(`YAZILACAK BARKOD : ${newBarcodes.length}  (${barcodePairs.length - newBarcodes.length} zaten kayitli)`)
+
+  // Atlananlari rapor dosyasina yaz
+  if (skipped.length) {
+    const reportPath = filePath.replace(/\.[^.]+$/, '') + '-atlananlar.csv'
+    const csv = ['Satir,Stok Kodu,Deger,Sebep']
+      .concat(skipped.map((s) => [s.line, s.code, s.value, s.reason].map((v) => `"${String(v).replace(/"/g, '""')}"`).join(',')))
+      .join('\r\n')
+    writeFileSync(reportPath, '﻿' + csv, 'utf8')
+    console.log(`\nAtlanan kayitlar raporu: ${reportPath}`)
+  }
 
   if (dryRun) { console.log('\n--dry-run: hicbir sey yazilmadi.'); return }
-  if (toInsert.length === 0) { console.log('Yapilacak is yok.'); return }
+  if (newProducts.length === 0 && newBarcodes.length === 0) { console.log('\nYapilacak is yok.'); return }
 
-  // 3) Partiler halinde yaz
-  let inserted = 0
-  const failedBatches = []
-  for (let start = 0; start < toInsert.length; start += BATCH_SIZE) {
-    const batch = toInsert.slice(start, start + BATCH_SIZE)
-    const { error } = await supabase
-      .from('products')
-      .insert(batch.map(({ stock_code, stock_name }) => ({ stock_code, stock_name })))
+  // --- 5) Urunleri yaz ---
+  let written = 0
+  const failures = []
+  for (let start = 0; start < newProducts.length; start += BATCH_SIZE) {
+    const batch = newProducts.slice(start, start + BATCH_SIZE)
+    const { error } = await supabase.from('products').insert(batch.map((p) => ({ stock_code: p.code, stock_name: p.name })))
     if (error) {
-      failedBatches.push({ start: start + 1, end: start + batch.length, message: error.message })
-      process.stdout.write(`\r  ${inserted}/${toInsert.length}  (parti ${start + 1}-${start + batch.length} HATA)          \n`)
+      failures.push(`urun ${start + 1}-${start + batch.length}: ${error.message}`)
+      process.stdout.write(`\r  urun ${written}/${newProducts.length}  (parti HATA)                    \n`)
     } else {
-      inserted += batch.length
-      process.stdout.write(`\r  ${inserted}/${toInsert.length} urun yazildi...`)
+      written += batch.length
+      process.stdout.write(`\r  urun ${written}/${newProducts.length} yazildi...`)
     }
   }
   console.log('')
 
-  // 4) Barkodlar (varsa) — urunler yazildiktan sonra, id eslestirerek
-  const withBarcode = toInsert.filter((record) => record.barcode)
-  if (withBarcode.length && inserted > 0) {
-    console.log(`\n${withBarcode.length} barkod yaziliyor...`)
-    const idByCode = new Map()
-    for (let from = 0; ; from += 1000) {
-      const { data, error } = await supabase.from('products').select('id, stock_code').order('stock_code').order('id').range(from, from + 999)
-      if (error) throw new Error(`Urun id'leri okunamadi: ${error.message}`)
-      for (const record of data ?? []) idByCode.set(record.stock_code.toLocaleLowerCase('tr-TR'), record.id)
-      if ((data ?? []).length < 1000) break
-    }
-    const barcodeRows = withBarcode
-      .map((record) => ({ product_id: idByCode.get(record.stock_code.toLocaleLowerCase('tr-TR')), barcode: record.barcode }))
-      .filter((row) => row.product_id)
+  if (newBarcodes.length === 0) { console.log(`\nBITTI. ${written} urun yazildi.`); return }
 
-    let barcodesInserted = 0
-    for (let start = 0; start < barcodeRows.length; start += BATCH_SIZE) {
-      const batch = barcodeRows.slice(start, start + BATCH_SIZE)
-      const { error } = await supabase.from('product_barcodes').insert(batch)
-      if (error) {
-        console.log(`  parti ${start + 1}-${start + batch.length} HATA: ${error.message}`)
-      } else {
-        barcodesInserted += batch.length
-        process.stdout.write(`\r  ${barcodesInserted}/${barcodeRows.length} barkod yazildi...`)
-      }
-    }
-    console.log('')
+  // --- 6) Barkodlari yaz (urun id'leri yeniden okunarak) ---
+  console.log('\nUrun id\'leri okunuyor...')
+  const idByCode = new Map()
+  for (let from = 0; ; from += 1000) {
+    const { data, error } = await supabase.from('products').select('id, stock_code').order('stock_code').order('id').range(from, from + 999)
+    if (error) throw new Error(`Urun id'leri okunamadi: ${error.message}`)
+    for (const record of data ?? []) idByCode.set(norm(record.stock_code), record.id)
+    if ((data ?? []).length < 1000) break
   }
 
-  console.log(`\nBITTI. ${inserted} urun yazildi.`)
-  if (failedBatches.length) {
-    console.log(`\n${failedBatches.length} parti basarisiz:`)
-    for (const batch of failedBatches.slice(0, 10)) console.log(`  satir ${batch.start}-${batch.end}: ${batch.message}`)
-    console.log('\nBasarisiz partiler icin sebebi duzeltip scripti tekrar calistirin;')
-    console.log('zaten yazilmis urunler otomatik atlanir.')
+  const barcodeRows = newBarcodes
+    .map((pair) => ({ product_id: idByCode.get(pair.code), barcode: pair.barcode }))
+    .filter((row) => row.product_id)
+
+  let barcodesWritten = 0
+  for (let start = 0; start < barcodeRows.length; start += BATCH_SIZE) {
+    const batch = barcodeRows.slice(start, start + BATCH_SIZE)
+    const { error } = await supabase.from('product_barcodes').insert(batch)
+    if (error) {
+      failures.push(`barkod ${start + 1}-${start + batch.length}: ${error.message}`)
+      process.stdout.write(`\r  barkod ${barcodesWritten}/${barcodeRows.length}  (parti HATA)                    \n`)
+    } else {
+      barcodesWritten += batch.length
+      process.stdout.write(`\r  barkod ${barcodesWritten}/${barcodeRows.length} yazildi...`)
+    }
+  }
+  console.log('')
+
+  console.log(`\nBITTI. ${written} urun, ${barcodesWritten} barkod yazildi.`)
+  if (failures.length) {
+    console.log(`\n${failures.length} parti basarisiz:`)
+    for (const failure of failures.slice(0, 10)) console.log('  ' + failure)
+    console.log('\nSebebi duzeltip scripti tekrar calistirin; yazilmis kayitlar otomatik atlanir.')
     process.exitCode = 1
   }
 }

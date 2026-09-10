@@ -33,10 +33,10 @@ export class DuplicateProductStockCodeError extends Error {
   }
 }
 
-// Canlı veritabanında 1655 ürün var; PostgREST tek istekte en fazla 1000 satır
-// döndürür ve bunu hatasız yapar (Content-Range: 0-999/1655). Sayfalı
-// çekilmezse stok listesi, dashboard sayaçları ve dışa aktarma sessizce 655
-// ürünü atlar.
+// PostgREST tek istekte en fazla 1000 satır
+// döndürür ve bunu hatasız yapar. Sayfalı çekilmezse veri sessizce eksik gelir.
+// Bu fonksiyon artık yalnızca dışa aktarma gibi gerçekten tüm veriyi isteyen
+// yerlerde kullanılıyor (94.894 üründe ~95 istek).
 //
 // `stock_code` benzersiz olsa da sayfalar arası sıralamayı garantiye almak için
 // ikincil anahtar olarak `id` de ekleniyor; böylece eşit değerli satırlar
@@ -67,8 +67,10 @@ export async function listProducts(): Promise<Product[]> {
 // yerler onu kullanmaya devam ediyor.
 //
 // `products_with_metrics` view'ı adres/koli sayılarını veritabanında hesaplar
-// (20260910000100 migration'ı). Ölçüldü: 1.677 satırda trigram index'leriyle
-// arama 1.4 ms ve plan Bitmap Index Scan kullanıyor, sequential scan değil.
+// (20260910085439 migration'ı).
+//
+// 94.894 üründe ölçüldü: filtresiz gezinme 3,8 ms. Arama ise ayrı bir yol
+// kullanıyor — gerekçesi queryProducts içinde.
 // ---------------------------------------------------------------------------
 
 export type ProductListFilter = 'all' | 'single-address' | 'multiple-addresses'
@@ -106,20 +108,20 @@ export async function queryProducts(options: ProductQueryOptions = {}): Promise<
   const { query = '', filter = 'all', sort = 'stock-name', page = 0, pageSize = PRODUCT_PAGE_SIZE } = options
   const trimmedQuery = query.trim()
 
+  // Arama varken ve yokken FARKLI yollar kullanılıyor; ikisi de kendi optimal
+  // planına sahip. 94.894 üründe ölçüldü:
+  //
+  //   Arama yok  → view + stock_name index'i          →    3,8 ms
+  //   Arama var  → view üzerinden ilike + ORDER BY    → 2.667 ms  ✗
+  //   Arama var  → search_products fonksiyonu         →   80 ms   ✓
+  //
+  // Sebep: ORDER BY + LIMIT, planlayıcıyı trigram index'inden vazgeçirip
+  // stock_name btree index'ini yürütüyor ve 83.019 satırı filtreyle eliyor.
+  // Fonksiyon içindeki `as materialized` CTE filtreyi önce çalıştırarak bunu
+  // engelliyor (bkz. 20260910131409 migration'ı).
+  if (trimmedQuery) return searchProductsOnServer(trimmedQuery, filter, sort, page, pageSize)
+
   let request = supabase.from('products_with_metrics').select(METRICS_SELECT, { count: 'exact' })
-
-  if (trimmedQuery) {
-    // PostgREST `or` gömülü kaynaklara (product_barcodes) uzanamadığı için
-    // barkodlar önce ürün id'sine çevrilir, sonra aynı `or` ifadesine katılır.
-    // Böylece stok kodu / stok adı / barkod tek bir sayfalı sorguda aranır.
-    const escaped = escapeForPostgrestPattern(trimmedQuery)
-    const conditions = [`stock_code.ilike.*${escaped}*`, `stock_name.ilike.*${escaped}*`]
-
-    const barcodeProductIds = await findProductIdsByBarcode(trimmedQuery)
-    if (barcodeProductIds.length > 0) conditions.push(`id.in.(${barcodeProductIds.join(',')})`)
-
-    request = request.or(conditions.join(','))
-  }
 
   if (filter === 'single-address') request = request.eq('address_count', 1)
   if (filter === 'multiple-addresses') request = request.gt('address_count', 1)
@@ -142,50 +144,61 @@ export async function queryProducts(options: ProductQueryOptions = {}): Promise<
 }
 
 /**
- * Filtre çiplerindeki sayılar aramadan bağımsızdır (ekranda hep toplam gösterilir),
- * bu yüzden sayfa sorgusundan ayrı ve tek sefer çekilir. `head: true` satır
- * döndürmez, yalnızca sayıyı getirir — 100k'da bile ucuz.
+ * Arama sonuclarini `search_products` fonksiyonundan alir. Fonksiyon toplam
+ * sayiyi da her satirda dondurdugu icin ayrica `count` istegi gerekmiyor.
  */
-export async function getProductFilterCounts(): Promise<{ all: number; single: number; multiple: number }> {
-  const countQuery = () => supabase.from('products_with_metrics').select('id', { count: 'exact', head: true })
+async function searchProductsOnServer(
+  query: string,
+  filter: ProductListFilter,
+  sort: ProductListSort,
+  page: number,
+  pageSize: number,
+): Promise<ProductQueryResult> {
+  const { data, error } = await supabase.rpc('search_products', {
+    p_query: query,
+    p_filter: filter,
+    p_sort: sort,
+    p_limit: pageSize,
+    p_offset: page * pageSize,
+  })
+  if (error) throw new Error(error.message)
 
-  const [all, single, multiple] = await Promise.all([
-    countQuery(),
-    countQuery().eq('address_count', 1),
-    countQuery().gt('address_count', 1),
-  ])
+  const rows = (data ?? []) as unknown as Array<{
+    id: string; stock_code: string; stock_name: string; is_active: boolean
+    address_count: number; total_cartons: number; barcodes: string[] | null; total_count: number
+  }>
 
-  const firstError = [all, single, multiple].find((result) => result.error)?.error
-  if (firstError) throw new Error(firstError.message)
-
-  return { all: all.count ?? 0, single: single.count ?? 0, multiple: multiple.count ?? 0 }
-}
-
-async function findProductIdsByBarcode(query: string): Promise<string[]> {
-  // Barkodlar yalnızca rakamdan oluşur. Harfli bir sorgu (ör. "TOHANA") hiçbir
-  // barkodla eşleşemeyeceği için isteği hiç atmıyoruz — arama başına bir tam
-  // gidiş-dönüş tasarrufu. Sayısal stok kodları da (ör. "025019") rakam içerdiği
-  // için bu kontrolden geçer, dolayısıyla onlar etkilenmez.
-  if (!/\d/.test(query)) return []
-
-  const { data, error } = await supabase
-    .from('product_barcodes')
-    .select('product_id')
-    .ilike('barcode', `%${escapeForPostgrestPattern(query)}%`)
-    .limit(200)
-  // Barkod araması yardımcı bir yol; başarısız olursa asıl aramayı düşürmek
-  // yerine sessizce atlanır.
-  if (error) return []
-  return [...new Set((data ?? []).map((row) => (row as { product_id: string }).product_id))]
+  return {
+    items: rows.map((row) => ({
+      id: row.id,
+      stockCode: row.stock_code,
+      stockName: row.stock_name,
+      barcodes: row.barcodes ?? [],
+      isActive: row.is_active,
+      addressCount: row.address_count ?? 0,
+      totalCartons: row.total_cartons ?? 0,
+    })),
+    // total_count her satırda aynı; satır yoksa sonuç da yok.
+    total: rows.length > 0 ? Number(rows[0].total_count) : 0,
+  }
 }
 
 /**
- * PostgREST `or=(...)` ifadesinde virgül koşulları, parantez ise grubu ayırır;
- * `*` de joker karakterdir. Kullanıcı bu karakterleri yazarsa filtre bozulur,
- * bu yüzden temizleniyor.
+ * Filtre ciplerindeki sayilar. `product_filter_counts` view'i ucunu tek satirda
+ * dondurur ve sayimi kucuk address_records tablosu uzerinden yapar.
+ *
+ * Eskiden view uzerinde uc ayri `count` sorgusu atiliyordu; her biri 94.894
+ * urunu tariyordu (584 ms x 3 = ~1,75 s). Simdi tek sorguda 75 ms.
  */
-function escapeForPostgrestPattern(value: string): string {
-  return value.replace(/[(),*\\]/g, ' ').trim()
+export async function getProductFilterCounts(): Promise<{ all: number; single: number; multiple: number }> {
+  const { data, error } = await supabase.from('product_filter_counts').select('*').single()
+  if (error) throw new Error(error.message)
+  const row = data as unknown as { all_products: number | null; single_address: number | null; multiple_address: number | null }
+  return {
+    all: row.all_products ?? 0,
+    single: row.single_address ?? 0,
+    multiple: row.multiple_address ?? 0,
+  }
 }
 
 function mapProductListItem(row: ProductMetricsRow): ProductListItem {

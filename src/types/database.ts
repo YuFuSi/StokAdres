@@ -10,6 +10,9 @@
 // 20260910000200 ile dashboard_summary view'i eklendi. View kolonlari nullable
 // gorunur (Postgres view uzerinden NOT NULL garantisi veremez) - productService
 // ve dashboardService bunu ?? ile karsilar.
+//
+// 20260910131409/131448: product_filter_counts view'i ve search_products
+// fonksiyonu eklendi; products_with_metrics'e stock_code_normalized geldi.
 
 export type Json =
   | string
@@ -309,6 +312,14 @@ export type Database = {
         }
         Relationships: []
       }
+      product_filter_counts: {
+        Row: {
+          all_products: number | null
+          multiple_address: number | null
+          single_address: number | null
+        }
+        Relationships: []
+      }
       products_with_metrics: {
         Row: {
           address_count: number | null
@@ -316,6 +327,7 @@ export type Database = {
           id: string | null
           is_active: boolean | null
           stock_code: string | null
+          stock_code_normalized: string | null
           stock_name: string | null
           total_cartons: number | null
           updated_at: string | null
@@ -412,6 +424,25 @@ export type Database = {
           isOneToOne: true
           isSetofReturn: false
         }
+      }
+      search_products: {
+        Args: {
+          p_filter?: string
+          p_limit?: number
+          p_offset?: number
+          p_query?: string
+          p_sort?: string
+        }
+        Returns: {
+          address_count: number
+          barcodes: string[]
+          id: string
+          is_active: boolean
+          stock_code: string
+          stock_name: string
+          total_cartons: number
+          total_count: number
+        }[]
       }
       restore_address_records: {
         Args: { p_operation_id: string; p_records: Json }
