@@ -104,3 +104,9 @@
 .product-picker__results strong { display:block; color:var(--ink); font:600 11px ui-monospace, SFMono-Regular, Menlo, monospace; }
 .product-picker__results small { display:block; margin-top:2px; color:var(--muted); font-size:11px; }
 .product-picker__state { display:block; padding:12px; color:var(--muted); font-size:12px; }
+
+/* Sayfalama — Stoklar ekranindaki .stocks-pagination ile ayni desen. */
+.addresses-pagination { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:14px 18px; border-top:1px solid var(--line); }
+.addresses-pagination span { color:var(--muted); font-size:12px; }
+.addresses-pagination .button { display:inline-flex; align-items:center; gap:6px; }
+.addresses-pagination .button:disabled { opacity:.45; cursor:not-allowed; }

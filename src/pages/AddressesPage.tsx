@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { MapPin, MoreHorizontal, Plus, Search } from 'lucide-react'
+import { ChevronLeft, ChevronRight, MapPin, MoreHorizontal, Plus, Search } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { addressRecordService } from '../data/localData'
 import { DuplicateActiveAddressError } from '../services/addressRecordService'
@@ -16,6 +16,10 @@ type AddressesPageProps = {
 type AddressFilter = 'all' | 'active' | 'inactive'
 type AddressSort = 'address' | 'stock-code' | 'stock-name' | 'carton' | 'updated-at'
 
+// Stoklar ekranıyla aynı sayfa boyutu (PRODUCT_PAGE_SIZE), böylece iki liste
+// aynı ritimde geziliyor.
+const ADDRESS_PAGE_SIZE = 50
+
 export function AddressesPage({ onBackToDashboard, initialSelectedRecordId = null }: AddressesPageProps) {
   const [barcodesByProductId, setBarcodesByProductId] = useState<Map<string, string[]>>(new Map())
   const [records, setRecords] = useState<AddressRecord[]>([])
@@ -23,6 +27,7 @@ export function AddressesPage({ onBackToDashboard, initialSelectedRecordId = nul
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState<AddressFilter>('all')
   const [sort, setSort] = useState<AddressSort>('updated-at')
+  const [page, setPage] = useState(0)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState('')
   const [formError, setFormError] = useState('')
@@ -73,6 +78,22 @@ export function AddressesPage({ onBackToDashboard, initialSelectedRecordId = nul
         .some((value) => value.toLocaleLowerCase('tr-TR').includes(normalizedQuery))
     })
     .sort((left, right) => compareRecords(left, right, sort))
+
+  // Kayıtların tamamı bellekte tutuluyor (filtre, sıralama ve arama istemcide
+  // ve anında); DOM'a ise yalnızca bir sayfa basılıyor. Eskiden tüm liste alt
+  // alta çiziliyordu — 2.800 kayıtta ekran ağırlaşıyordu.
+  //
+  // NOT: Adres kaydı sayısı ~20.000'i geçerse bu ekran da Stoklar gibi sunucu
+  // tarafı sayfalamaya taşınmalı (filtre/sıralama/arama da sunucuya gider).
+  const pageCount = Math.max(1, Math.ceil(filteredRecords.length / ADDRESS_PAGE_SIZE))
+  const safePage = Math.min(page, pageCount - 1)
+  const pageStart = safePage * ADDRESS_PAGE_SIZE
+  const visibleRecords = filteredRecords.slice(pageStart, pageStart + ADDRESS_PAGE_SIZE)
+
+  // Filtre/arama/sıralama değişince ilk sayfaya dön; yoksa kullanıcı boş bir
+  // sayfada kalabiliyor.
+  useEffect(() => { setPage(0) }, [query, filter, sort])
+
   const selectedRecord = records.find((record) => record.id === selectedRecordId) ?? null
   const counts = {
     all: records.length,
@@ -209,16 +230,25 @@ export function AddressesPage({ onBackToDashboard, initialSelectedRecordId = nul
       {!isLoading && !error && (
         <div className={`addresses-layout ${selectedRecord ? 'addresses-layout--detail-open' : ''}`}>
           <section className="addresses-table-panel" aria-label="Adres kayıtları">
-            <div className="addresses-table-caption"><span>{filteredRecords.length} kayıt</span><span>Adres bazında görünüm · satıra tıklayarak ayrıntıyı açın</span></div>
+            <div className="addresses-table-caption"><span>{filteredRecords.length === 0 ? '0 kayıt' : `${pageStart + 1}-${pageStart + visibleRecords.length} / ${filteredRecords.length} kayıt`}</span><span>Adres bazında görünüm · satıra tıklayarak ayrıntıyı açın</span></div>
             {records.length === 0 ? <p className="addresses-state">Henüz adres kaydı bulunmuyor.</p> : filteredRecords.length === 0 ? <p className="addresses-state">Aramanızla eşleşen adres bulunamadı.</p> : (
+              <>
               <div className="addresses-table-wrap">
                 <table className="addresses-table">
                   <thead><tr><th>Adres</th><th>Stok kodu</th><th>Stok adı</th><th>Koli</th><th>Durum</th><th>Güncellenme</th><th aria-label="Aksiyon" /></tr></thead>
-                  <tbody>{filteredRecords.map((record) => <tr className={selectedRecordId === record.id ? 'addresses-row addresses-row--selected' : 'addresses-row'} key={record.id} onClick={() => { setSelectedRecordId(record.id); closeForm() }}>
+                  <tbody>{visibleRecords.map((record) => <tr className={selectedRecordId === record.id ? 'addresses-row addresses-row--selected' : 'addresses-row'} key={record.id} onClick={() => { setSelectedRecordId(record.id); closeForm() }}>
                     <td><span className="address-cell"><MapPin size={14}/>{record.address}</span></td><td><strong>{record.stockCode}</strong></td><td className="address-product-name">{record.stockName}</td><td><strong className="carton-cell">{record.cartonCount}</strong></td><td><StatusBadge isActive={record.isActive} /></td><td>{formatDate(record.updatedAt)}</td><td><button className="address-row-action" type="button" aria-label={`${record.address} ayrıntısını aç`} onClick={(event) => { event.stopPropagation(); setSelectedRecordId(record.id); closeForm() }}><MoreHorizontal size={17}/></button></td>
                   </tr>)}</tbody>
                 </table>
               </div>
+              {pageCount > 1 && (
+                <div className="addresses-pagination">
+                  <button className="button button--secondary" type="button" disabled={safePage === 0} onClick={() => setPage((current) => Math.max(0, current - 1))}><ChevronLeft size={15} /> Önceki</button>
+                  <span>Sayfa {safePage + 1} / {pageCount}</span>
+                  <button className="button button--secondary" type="button" disabled={safePage + 1 >= pageCount} onClick={() => setPage((current) => current + 1)}>Sonraki <ChevronRight size={15} /></button>
+                </div>
+              )}
+              </>
             )}
           </section>
 
