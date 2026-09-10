@@ -171,7 +171,17 @@ Yeni renk eklerken **koyu karşılığını da** `:root[data-theme='dark']`'a ya
 `global.css` tek bir `:root` bloğu içerir. Eskiden üç rakip blok vardı; ikinci
 bir tane ekleme.
 
-### 10. `src/types/database.ts` otomatik üretilir
+### 10. `supabase.ts` modül yüklenirken hata fırlatır — testleri etkiler
+`VITE_SUPABASE_URL`/`VITE_SUPABASE_ANON_KEY` yoksa `src/lib/supabase.ts`
+**import anında** hata fırlatır (Sprint 0.2; sessizce yanlış çalışmasın diye
+kasıtlı). Sonuç: `supabase.ts`'i dolaylı da olsa import eden her test dosyası,
+`.env` olmayan ortamda hiç çalışamaz.
+
+CI bu yüzden placeholder `VITE_SUPABASE_*` değerleri veriyor
+([ci.yml](.github/workflows/ci.yml)). Yeni test yazarken saf fonksiyonları
+Supabase import eden modüllerden ayrı tutmak daha temiz olur.
+
+### 11. `src/types/database.ts` otomatik üretilir
 Şema değişince yenilenmeli: `generate_typescript_types` (Supabase MCP) veya
 `supabase gen types typescript --project-id ryuguxxnmccybquqigji`.
 Üreteç CHECK constraint'lerini ifade edemez (`conflict_type: string` gelir);
@@ -419,3 +429,21 @@ sınırlandı. 13 advisor bulgusundan 12'si kapanır (`pg_trgm` bilerek bırakı
 kullanıcıdan 512×512 PNG veya `.ico` bekleniyor.
 
 **3.11 — Bu dosya** Faz 3 gerçeğine göre güncellendi.
+
+### Faz 3 kapanışı
+
+- Branch `main`'e fast-forward ile alındı (`0e5b5ff`).
+- **3.2 migration'ı canlıya uygulandı.** Doğrulandı: advisor bulguları
+  **13 → 1** (kalan: bilerek bırakılan `pg_trgm`). Uçtan uca test (anon
+  anahtarla, kendi test ürünü üzerinde, sonra temizlendi):
+  - Audit trigger'lar EXECUTE geri alındıktan **sonra da çalışıyor** —
+    `product-created` ve `address-created` yazıldı. PostgreSQL EXECUTE'u
+    `CREATE TRIGGER` anında denetliyor, her ateşlemede değil.
+  - Adresi olan ürünü silme **engellendi**; ürün ve adres ikisi de kaldı →
+    CASCADE zincirleme silme kapandı.
+  - Boş ürün **silinebildi** → `rollbackCreatedProduct` telafisi çalışıyor.
+- **İlk CI çalışması düştü** ve sebebi Tuzak #10 oldu: `supabase.ts`'in modül
+  yüklenirken fırlattığı hata, `.env`'siz CI'da test dosyasını hiç
+  çalıştırmıyordu. Placeholder env değişkenleriyle çözüldü; `.env` geçici
+  gizlenerek yerelde birebir yeniden üretilip doğrulandı. CI artık yeşil.
+- **3.8 (ikon) yapılmadı** — kullanıcıdan 512×512 PNG / `.ico` bekleniyor.
