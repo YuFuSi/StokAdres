@@ -13,6 +13,10 @@
 //
 // 20260910131409/131448: product_filter_counts view'i ve search_products
 // fonksiyonu eklendi; products_with_metrics'e stock_code_normalized geldi.
+//
+// 20260910213000: product_filter_counts'a no_address kolonu.
+// 20260910233000: address_record_counts view'i ve search_address_records
+// fonksiyonu (Adresler ekraninin sunucu tarafi sorgusu).
 
 export type Json =
   | string
@@ -303,6 +307,15 @@ export type Database = {
       }
     }
     Views: {
+      address_record_counts: {
+        Row: {
+          active_cartons: number | null
+          active_records: number | null
+          all_records: number | null
+          inactive_records: number | null
+        }
+        Relationships: []
+      }
       dashboard_summary: {
         Row: {
           active_address_records: number | null
@@ -316,6 +329,7 @@ export type Database = {
         Row: {
           all_products: number | null
           multiple_address: number | null
+          no_address: number | null
           single_address: number | null
         }
         Relationships: []
@@ -424,6 +438,27 @@ export type Database = {
           isOneToOne: true
           isSetofReturn: false
         }
+      }
+      search_address_records: {
+        Args: {
+          p_filter?: string
+          p_limit?: number
+          p_offset?: number
+          p_query?: string
+          p_sort?: string
+        }
+        Returns: {
+          address: string
+          carton_count: number
+          created_at: string
+          id: string
+          is_active: boolean
+          product_id: string
+          stock_code: string
+          stock_name: string
+          total_count: number
+          updated_at: string
+        }[]
       }
       search_products: {
         Args: {

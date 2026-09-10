@@ -1,9 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronLeft, ChevronRight, MapPin, MoreHorizontal, Plus, Search } from 'lucide-react'
 import { addressRecordService } from '../data/localData'
-import { DuplicateActiveAddressError } from '../services/addressRecordService'
+import { ADDRESS_PAGE_SIZE, DuplicateActiveAddressError, type AddressRecordFilter, type AddressRecordSort } from '../services/addressRecordService'
 import { queryProducts, type ProductListItem } from '../services/productService'
-import { findBarcodesByProductId } from '../services/productLookup'
 import type { AddressRecord } from '../types/addressRecord'
 import type { Product } from '../types/product'
 import './AddressesPage.css'
@@ -13,20 +12,17 @@ type AddressesPageProps = {
   initialSelectedRecordId?: string | null
 }
 
-type AddressFilter = 'all' | 'active' | 'inactive'
-type AddressSort = 'address' | 'stock-code' | 'stock-name' | 'carton' | 'updated-at'
-
-// Stoklar ekranıyla aynı sayfa boyutu (PRODUCT_PAGE_SIZE), böylece iki liste
-// aynı ritimde geziliyor.
-const ADDRESS_PAGE_SIZE = 50
+const SEARCH_DEBOUNCE_MS = 250
 
 export function AddressesPage({ onBackToDashboard, initialSelectedRecordId = null }: AddressesPageProps) {
-  const [barcodesByProductId, setBarcodesByProductId] = useState<Map<string, string[]>>(new Map())
   const [records, setRecords] = useState<AddressRecord[]>([])
-  const [selectedRecordId, setSelectedRecordId] = useState<string | null>(initialSelectedRecordId)
+  const [total, setTotal] = useState(0)
+  const [counts, setCounts] = useState({ all: 0, active: 0, inactive: 0, activeCartons: 0 })
+  const [selectedRecord, setSelectedRecord] = useState<AddressRecord | null>(null)
   const [query, setQuery] = useState('')
-  const [filter, setFilter] = useState<AddressFilter>('all')
-  const [sort, setSort] = useState<AddressSort>('updated-at')
+  const [activeQuery, setActiveQuery] = useState('')
+  const [filter, setFilter] = useState<AddressRecordFilter>('all')
+  const [sort, setSort] = useState<AddressRecordSort>('updated-at')
   const [page, setPage] = useState(0)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState('')
@@ -39,68 +35,66 @@ export function AddressesPage({ onBackToDashboard, initialSelectedRecordId = nul
   const [cartonCount, setCartonCount] = useState('')
   const [isActive, setIsActive] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
+  // Yazma sonrası listeyi tazelemek için: değeri artınca sorgu effect'i yeniden
+  // çalışır. Sayfa/filtre sıfırlamadan yerinde yenileme sağlar.
+  const [reloadToken, setReloadToken] = useState(0)
 
-  // Bu ekran eskiden listProducts() ile TÜM ürünleri çekiyordu. 94.894 üründe
-  // bu 1.000'erlik 95 istek (~95 saniye) demek. Adres kayıtları stok kodu ve
-  // adını zaten gömülü getirdiği için ürün listesine gerek yok; yalnızca
-  // aramada kullanılan barkodlar, görünen kayıtların ürünleri için çekiliyor.
-  const loadData = async (keepRecordId?: string | null) => {
-    const nextRecords = await addressRecordService.list()
-    setRecords(nextRecords)
-    setBarcodesByProductId(await findBarcodesByProductId(nextRecords.map((record) => record.productId)))
-    if (keepRecordId !== undefined) setSelectedRecordId(keepRecordId)
-  }
+  // Arama, filtre, sıralama ve sayfalama SUNUCUDA (search_address_records).
+  // Bu ekran eskiden tüm tabloyu çekip hepsini istemcide yapıyordu.
+  useEffect(() => {
+    const timer = window.setTimeout(() => setActiveQuery(query.trim()), SEARCH_DEBOUNCE_MS)
+    return () => window.clearTimeout(timer)
+  }, [query])
+
+  // Arama/filtre/sıralama değişince ilk sayfaya dön; yoksa kullanıcı boş bir
+  // sayfada kalabiliyor.
+  useEffect(() => { setPage(0) }, [activeQuery, filter, sort])
 
   useEffect(() => {
-    let isMounted = true
+    let cancelled = false
     setIsLoading(true)
-    addressRecordService.list()
-      .then(async (nextRecords) => {
-        if (!isMounted) return
-        setRecords(nextRecords)
-        setSelectedRecordId(initialSelectedRecordId)
-        const barcodes = await findBarcodesByProductId(nextRecords.map((record) => record.productId))
-        if (isMounted) setBarcodesByProductId(barcodes)
-      })
-      .catch((reason: unknown) => {
+    void (async () => {
+      try {
+        const [result, nextCounts] = await Promise.all([
+          addressRecordService.search({ query: activeQuery, filter, sort, page }),
+          addressRecordService.getCounts(),
+        ])
+        if (cancelled) return
+        setRecords(result.items)
+        setTotal(result.total)
+        setCounts(nextCounts)
+        setError('')
+      } catch (reason: unknown) {
         console.error(reason)
-        if (isMounted) setError('Adresler yüklenirken bir sorun oluştu.')
-      })
-      .finally(() => { if (isMounted) setIsLoading(false) })
-    return () => { isMounted = false }
-  }, [])
-  const normalizedQuery = query.trim().toLocaleLowerCase('tr-TR')
-  const filteredRecords = records
-    .filter((record) => filter === 'all' || (filter === 'active' ? record.isActive : !record.isActive))
-    .filter((record) => {
-      if (!normalizedQuery) return true
-      return [record.address, record.stockCode, record.stockName, ...(barcodesByProductId.get(record.productId) ?? [])]
-        .some((value) => value.toLocaleLowerCase('tr-TR').includes(normalizedQuery))
-    })
-    .sort((left, right) => compareRecords(left, right, sort))
+        if (!cancelled) setError('Adresler yüklenirken bir sorun oluştu.')
+      } finally {
+        if (!cancelled) setIsLoading(false)
+      }
+    })()
+    return () => { cancelled = true }
+  }, [activeQuery, filter, sort, page, reloadToken])
 
-  // Kayıtların tamamı bellekte tutuluyor (filtre, sıralama ve arama istemcide
-  // ve anında); DOM'a ise yalnızca bir sayfa basılıyor. Eskiden tüm liste alt
-  // alta çiziliyordu — 2.800 kayıtta ekran ağırlaşıyordu.
-  //
-  // NOT: Adres kaydı sayısı ~20.000'i geçerse bu ekran da Stoklar gibi sunucu
-  // tarafı sayfalamaya taşınmalı (filtre/sıralama/arama da sunucuya gider).
-  const pageCount = Math.max(1, Math.ceil(filteredRecords.length / ADDRESS_PAGE_SIZE))
+  // Ürün detayından bir adrese tıklanarak gelindiğinde o kayıt listede
+  // olmayabilir (başka sayfada); doğrudan kendisini çekiyoruz.
+  useEffect(() => {
+    if (!initialSelectedRecordId) return
+    let cancelled = false
+    void addressRecordService.getById(initialSelectedRecordId)
+      .then((record) => { if (!cancelled && record) setSelectedRecord(record) })
+      .catch((reason: unknown) => console.error(reason))
+    return () => { cancelled = true }
+  }, [initialSelectedRecordId])
+
+  const reload = (keepSelected: AddressRecord | null = selectedRecord) => {
+    setSelectedRecord(keepSelected)
+    setReloadToken((value) => value + 1)
+  }
+
+  const pageCount = Math.max(1, Math.ceil(total / ADDRESS_PAGE_SIZE))
   const safePage = Math.min(page, pageCount - 1)
   const pageStart = safePage * ADDRESS_PAGE_SIZE
-  const visibleRecords = filteredRecords.slice(pageStart, pageStart + ADDRESS_PAGE_SIZE)
-
-  // Filtre/arama/sıralama değişince ilk sayfaya dön; yoksa kullanıcı boş bir
-  // sayfada kalabiliyor.
-  useEffect(() => { setPage(0) }, [query, filter, sort])
-
-  const selectedRecord = records.find((record) => record.id === selectedRecordId) ?? null
-  const counts = {
-    all: records.length,
-    active: records.filter((record) => record.isActive).length,
-    inactive: records.filter((record) => !record.isActive).length,
-  }
-  const totalCartons = records.filter((record) => record.isActive).reduce((sum, record) => sum + record.cartonCount, 0)
+  const visibleRecords = records
+  const totalCartons = counts.activeCartons
 
   const closeForm = () => {
     setIsFormOpen(false)
@@ -158,7 +152,7 @@ export function AddressesPage({ onBackToDashboard, initialSelectedRecordId = nul
           isActive,
         })
       }
-      await loadData(editingRecordId ?? selectedRecordId)
+      reload()
       closeForm()
     } catch (reason: unknown) {
       console.error(reason)
@@ -174,8 +168,7 @@ export function AddressesPage({ onBackToDashboard, initialSelectedRecordId = nul
     if (!window.confirm('Bu adres kaydı silinsin mi?')) return
     try {
       await addressRecordService.delete(record.id)
-      await loadData(selectedRecordId === record.id ? null : selectedRecordId)
-      if (selectedRecordId === record.id) setSelectedRecordId(null)
+      reload(selectedRecord?.id === record.id ? null : selectedRecord)
       if (editingRecordId === record.id) closeForm()
     } catch (reason: unknown) {
       console.error(reason)
@@ -208,7 +201,7 @@ export function AddressesPage({ onBackToDashboard, initialSelectedRecordId = nul
           <FilterButton active={filter === 'inactive'} onClick={() => setFilter('inactive')}>Pasif <strong>{counts.inactive}</strong></FilterButton>
         </div>
         <label className="addresses-sort">Sırala
-          <select value={sort} onChange={(event) => setSort(event.target.value as AddressSort)}>
+          <select value={sort} onChange={(event) => setSort(event.target.value as AddressRecordSort)}>
             <option value="updated-at">Güncellenme tarihi</option>
             <option value="address">Adres</option>
             <option value="stock-code">Stok kodu</option>
@@ -230,14 +223,14 @@ export function AddressesPage({ onBackToDashboard, initialSelectedRecordId = nul
       {!isLoading && !error && (
         <div className={`addresses-layout ${selectedRecord ? 'addresses-layout--detail-open' : ''}`}>
           <section className="addresses-table-panel" aria-label="Adres kayıtları">
-            <div className="addresses-table-caption"><span>{filteredRecords.length === 0 ? '0 kayıt' : `${pageStart + 1}-${pageStart + visibleRecords.length} / ${filteredRecords.length} kayıt`}</span><span>Adres bazında görünüm · satıra tıklayarak ayrıntıyı açın</span></div>
-            {records.length === 0 ? <p className="addresses-state">Henüz adres kaydı bulunmuyor.</p> : filteredRecords.length === 0 ? <p className="addresses-state">Aramanızla eşleşen adres bulunamadı.</p> : (
+            <div className="addresses-table-caption"><span>{total === 0 ? '0 kayıt' : `${pageStart + 1}-${pageStart + visibleRecords.length} / ${total} kayıt`}</span><span>Adres bazında görünüm · satıra tıklayarak ayrıntıyı açın</span></div>
+            {total === 0 ? <p className="addresses-state">{counts.all === 0 ? 'Henüz adres kaydı bulunmuyor.' : 'Aramanızla eşleşen adres bulunamadı.'}</p> : (
               <>
               <div className="addresses-table-wrap">
                 <table className="addresses-table">
                   <thead><tr><th>Adres</th><th>Stok kodu</th><th>Stok adı</th><th>Koli</th><th>Durum</th><th>Güncellenme</th><th aria-label="Aksiyon" /></tr></thead>
-                  <tbody>{visibleRecords.map((record) => <tr className={selectedRecordId === record.id ? 'addresses-row addresses-row--selected' : 'addresses-row'} key={record.id} onClick={() => { setSelectedRecordId(record.id); closeForm() }}>
-                    <td><span className="address-cell"><MapPin size={14}/>{record.address}</span></td><td><strong>{record.stockCode}</strong></td><td className="address-product-name">{record.stockName}</td><td><strong className="carton-cell">{record.cartonCount}</strong></td><td><StatusBadge isActive={record.isActive} /></td><td>{formatDate(record.updatedAt)}</td><td><button className="address-row-action" type="button" aria-label={`${record.address} ayrıntısını aç`} onClick={(event) => { event.stopPropagation(); setSelectedRecordId(record.id); closeForm() }}><MoreHorizontal size={17}/></button></td>
+                  <tbody>{visibleRecords.map((record) => <tr className={selectedRecord?.id === record.id ? 'addresses-row addresses-row--selected' : 'addresses-row'} key={record.id} onClick={() => { setSelectedRecord(record); closeForm() }}>
+                    <td><span className="address-cell"><MapPin size={14}/>{record.address}</span></td><td><strong>{record.stockCode}</strong></td><td className="address-product-name">{record.stockName}</td><td><strong className="carton-cell">{record.cartonCount}</strong></td><td><StatusBadge isActive={record.isActive} /></td><td>{formatDate(record.updatedAt)}</td><td><button className="address-row-action" type="button" aria-label={`${record.address} ayrıntısını aç`} onClick={(event) => { event.stopPropagation(); setSelectedRecord(record); closeForm() }}><MoreHorizontal size={17}/></button></td>
                   </tr>)}</tbody>
                 </table>
               </div>
@@ -253,7 +246,7 @@ export function AddressesPage({ onBackToDashboard, initialSelectedRecordId = nul
           </section>
 
           {selectedRecord && <aside className="address-detail" aria-label="Adres detayı">
-            <div className="address-detail__header"><div><span className="selected-product__label">Adres detayı</span><h2>{selectedRecord.address}</h2><p>{selectedRecord.stockCode}</p></div><button className="modal-close" type="button" onClick={() => { setSelectedRecordId(null); closeForm() }} aria-label="Adres detayını kapat">×</button></div>
+            <div className="address-detail__header"><div><span className="selected-product__label">Adres detayı</span><h2>{selectedRecord.address}</h2><p>{selectedRecord.stockCode}</p></div><button className="modal-close" type="button" onClick={() => { setSelectedRecord(null); closeForm() }} aria-label="Adres detayını kapat">×</button></div>
             <div className="address-detail__product"><span>Stok kodu<strong>{selectedRecord.stockCode}</strong></span><span>Stok adı<strong>{selectedRecord.stockName}</strong></span></div>
             <div className="address-detail__meta"><span>Adres<strong>{selectedRecord.address}</strong></span><span>Koli<strong>{selectedRecord.cartonCount}</strong></span><span>Durum<StatusBadge isActive={selectedRecord.isActive} /></span></div>
             <div className="address-detail__dates"><span>Oluşturulma<strong>{formatDate(selectedRecord.createdAt)}</strong></span><span>Güncellenme<strong>{formatDate(selectedRecord.updatedAt)}</strong></span></div>
@@ -310,14 +303,6 @@ function AddressForm(props: AddressFormProps) {
 
 function SummaryMetric({ label, value }: { label: string; value: number }) {
   return <div><span>{label}</span><strong>{value}</strong></div>
-}
-
-function compareRecords(left: AddressRecord, right: AddressRecord, sort: AddressSort): number {
-  if (sort === 'address') return left.address.localeCompare(right.address, 'tr-TR')
-  if (sort === 'stock-code') return left.stockCode.localeCompare(right.stockCode, 'tr-TR', { numeric: true })
-  if (sort === 'stock-name') return left.stockName.localeCompare(right.stockName, 'tr-TR')
-  if (sort === 'carton') return right.cartonCount - left.cartonCount
-  return right.updatedAt.localeCompare(left.updatedAt)
 }
 
 function formatDate(value: string): string {

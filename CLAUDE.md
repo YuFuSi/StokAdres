@@ -57,7 +57,7 @@ src/services/             Veri erişim katmanı (UI supabase'i doğrudan import 
 src/services/*.test.ts    Vitest testleri
 src/data/localData.ts     addressRecordService singleton'ı burada
 scripts/bulk-load-products.mjs  Toplu ürün yükleme (README yanında)
-supabase/migrations/      16 dosya
+supabase/migrations/      17 dosya
 .github/workflows/ci.yml  typecheck + test + build
 ```
 
@@ -70,7 +70,7 @@ sunucu tarafına taşındığında ekranlar hiç değişmedi.
 |---|---|---|
 | Stoklar | `stocks` | 🟢 **Sunucu tarafı** sayfalama + arama + filtre sayaçları |
 | Ürün Detayı | `stocks` + seçim | 🟢 Tam CRUD |
-| Adresler | `addresses` | 🟢 Tam CRUD + 50'şerli sayfalama |
+| Adresler | `addresses` | 🟢 **Sunucu tarafı** arama + filtre + sıralama + sayfalama |
 | İşlem Geçmişi | `audit` | 🟢 Çalışıyor |
 | **CABA Listesi** | `caba` | 🟢 **Yeni** — fiş yapıştır → adresleri bul (salt okuma) |
 | **İçe Aktar** | `import` | 🟢 **Yeniden yazıldı** — önizleme + satır bazlı düzeltme + toplu yazma |
@@ -273,9 +273,9 @@ address_conflicts   → address_conflicts_audit_trigger
 
 | # | Sev | Sorun |
 |---|---|---|
-| 1 | 🟡 | Adresler ekranı ~20.000 kaydı geçince sunucu tarafına taşınmalı (şu an 2.818; günde ~2.700 ekleniyor) |
+| 1 | 🟢 | Uygulama ikonu yok |
 | 2 | 🔴 | **Auth yok** — anon key installer bundle'ında, anon `products`/`address_records`/`product_barcodes`'a yazabiliyor. Tek kullanıcı/tek makine olduğu için bilinçli ertelendi; ikinci makine çıkarsa öne alınmalı |
-| 3 | 🟢 | Uygulama ikonu yok (sıradaki iş) |
+| 3 | 🟢 | ESLint yok. Test (vitest) ve CI var |
 | 4 | 🟡 | Barkod okuyucu akışı yok (kullanıcı şimdilik istemiyor — kâğıtla çalışılıyor) |
 | 5 | 🟡 | `as unknown as` cast'leri — iç içe ilişki/view seçimlerinde nullable uyumsuzluğu |
 | 6 | 🟡 | `pg_trgm` public şemada (Supabase linter). Taşımak 95k satırda GIN index'leri yeniden kurmayı gerektirir; bilinçli bırakıldı |

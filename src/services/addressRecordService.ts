@@ -46,6 +46,35 @@ export class AddressRecordNotFoundError extends Error {
 const ADDRESS_RECORD_SELECT =
   'id, product_id, address, carton_count, is_active, created_at, updated_at, products!inner(stock_code, stock_name)' as const
 
+export type AddressRecordFilter = 'all' | 'active' | 'inactive'
+export type AddressRecordSort = 'address' | 'stock-code' | 'stock-name' | 'carton' | 'updated-at'
+
+export type AddressQueryOptions = {
+  query?: string
+  filter?: AddressRecordFilter
+  sort?: AddressRecordSort
+  page?: number
+  pageSize?: number
+}
+
+export type AddressQueryResult = { items: AddressRecord[]; total: number }
+
+/** Stoklar ekranıyla aynı sayfa boyutu; iki liste aynı ritimde geziliyor. */
+export const ADDRESS_PAGE_SIZE = 50
+
+type AddressSearchRow = {
+  id: string
+  product_id: string
+  stock_code: string
+  stock_name: string
+  address: string
+  carton_count: number
+  is_active: boolean
+  created_at: string
+  updated_at: string
+  total_count: number
+}
+
 export class AddressRecordService {
   async create(input: CreateAddressRecordInput): Promise<AddressRecord> {
     const product = input.productId
@@ -166,6 +195,64 @@ export class AddressRecordService {
    * Eskiden bu, list() ile tüm tabloyu çekip istemcide sıralayarak yapılıyordu;
    * 100k ölçeğinde beş satır göstermek için tüm tabloyu indirmek anlamsız.
    */
+  /**
+   * Adresler ekranının veri kaynağı: arama, filtre, sıralama ve sayfalama
+   * sunucuda (`search_address_records`, 20260910233000).
+   *
+   * Bu ekran eskiden list() ile tüm tabloyu çekip hepsini istemcide yapıyordu.
+   * 2.818 kayıtta çalışıyordu ama adresleme sürüyor (günde ~2.700 kayıt) ve
+   * tablo ürün sayısına doğru büyüyor.
+   *
+   * Toplam sayı her satırda geldiği için ayrıca `count` isteği gerekmiyor.
+   */
+  async search(options: AddressQueryOptions = {}): Promise<AddressQueryResult> {
+    const { query = '', filter = 'all', sort = 'updated-at', page = 0, pageSize = ADDRESS_PAGE_SIZE } = options
+    const { data, error } = await supabase.rpc('search_address_records', {
+      p_query: query.trim(),
+      p_filter: filter,
+      p_sort: sort,
+      p_limit: pageSize,
+      p_offset: page * pageSize,
+    })
+    if (error) throw new Error(error.message)
+
+    const rows = (data ?? []) as unknown as AddressSearchRow[]
+    return {
+      items: rows.map((row) => ({
+        id: row.id,
+        productId: row.product_id,
+        stockCode: row.stock_code,
+        stockName: row.stock_name,
+        address: row.address,
+        cartonCount: row.carton_count,
+        isActive: row.is_active,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+      })),
+      // total_count her satırda aynı; satır yoksa sonuç da yok.
+      total: rows.length > 0 ? Number(rows[0].total_count) : 0,
+    }
+  }
+
+  /**
+   * Filtre çipleri ve özet şeridi. ARAMADAN BAĞIMSIZ: kullanıcı arama yaparken
+   * de deponun geneli görünmeli.
+   */
+  async getCounts(): Promise<{ all: number; active: number; inactive: number; activeCartons: number }> {
+    const { data, error } = await supabase.from('address_record_counts').select('*').single()
+    if (error) throw new Error(error.message)
+    const row = data as unknown as {
+      all_records: number | null; active_records: number | null
+      inactive_records: number | null; active_cartons: number | null
+    }
+    return {
+      all: row.all_records ?? 0,
+      active: row.active_records ?? 0,
+      inactive: row.inactive_records ?? 0,
+      activeCartons: row.active_cartons ?? 0,
+    }
+  }
+
   async listRecent(limit: number): Promise<AddressRecord[]> {
     const { data, error } = await supabase
       .from('address_records')
