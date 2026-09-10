@@ -31,19 +31,6 @@ export class DuplicateActiveAddressError extends Error {
   }
 }
 
-/**
- * Toplu silme/geri yükleme yetenekleri Sprint 0.1'de istemci tarafından
- * kaldırıldı. Detaylı gerekçe AddressRecordService.replaceAll/clear üzerinde.
- */
-export class DestructiveOperationUnavailableError extends Error {
-  constructor(operation: string) {
-    super(
-      `${operation} işlemi bu uygulamadan kullanılamıyor. Tüm adres kayıtlarını tek seferde silen bu yetenek güvenlik nedeniyle kaldırıldı.`,
-    )
-    this.name = 'DestructiveOperationUnavailableError'
-  }
-}
-
 export class AddressRecordNotFoundError extends Error {
   constructor(id: string) {
     super(`${id} kimlikli adres kaydı bulunamadı.`)
@@ -137,36 +124,16 @@ export class AddressRecordService {
     return Boolean(count)
   }
 
-  // Sprint 0.1'de public.restore_address_records(jsonb, uuid) ve
-  // public.clear_address_records(uuid) fonksiyonlarının EXECUTE yetkisi
-  // public/anon/authenticated rollerinden geri alındı
-  // (20260908_revoke_destructive_rpc_grants.sql). Her ikisi de SECURITY DEFINER
-  // ve WHERE'siz `delete from public.address_records` çalıştırıyor; uygulama
-  // publishable anahtarı renderer bundle'ına gömdüğü için installer'ı eline
-  // geçiren herkes tüm adres verisini silebiliyordu.
-  //
-  // Bu iki metot yalnızca src/pages/HomePage.tsx'ten çağrılıyor ve HomePage
-  // erişilebilir değil: src/App.tsx:35 onu ancak activePage AppPage
-  // birleşimindeki 9 değerin hiçbiri değilken render ediyor, ki bu imkânsız.
-  // Yani hiçbir kullanıcı akışı etkilenmiyor.
-  //
-  // RPC çağrıları burada bilerek KALDIRILDI, geri getirilmedi:
-  //   * Çağrı bırakılsaydı yetki reddi ham bir Postgres hatası olarak
-  //     ("permission denied for function ...") kullanıcıya yansırdı.
-  //   * Ayrıca bu iki fonksiyonun adı ve parametre şekli, dağıtılan renderer
-  //     bundle'ında iki adet "tüm tabloyu sil" fonksiyonunun tarifi olarak
-  //     duruyordu. Çağrıyı kaldırmak bu haritayı bundle'dan da siliyor.
-  //
-  // Yeni bir yıkıcı RPC AÇILMADI ve eski yetkiler geri verilmedi. Toplu geri
-  // yükleme/temizleme gerçekten gerekirse, ayrı bir yetkili rol altında
-  // (Phase 8 admin rolü veya sunucu tarafı) yeniden tasarlanmalıdır.
-  async replaceAll(_records: AddressRecord[]): Promise<void> {
-    throw new DestructiveOperationUnavailableError('Yedekten toplu geri yükleme')
-  }
-
-  async clear(): Promise<void> {
-    throw new DestructiveOperationUnavailableError('Tüm adres verilerini temizleme')
-  }
+  // NOT: Toplu silme/geri yükleme (replaceAll / clear) burada YOK ve
+  // eklenmemeli. public.restore_address_records(jsonb, uuid) ve
+  // public.clear_address_records(uuid) SECURITY DEFINER olup WHERE'siz
+  // `delete from public.address_records` çalıştırıyor; EXECUTE yetkileri
+  // Sprint 0.1'de public/anon/authenticated rollerinden geri alındı
+  // (20260908000100_revoke_destructive_rpc_grants.sql). Uygulama publishable
+  // anahtarı renderer bundle'ına gömdüğü için bu çağrıların istemcide
+  // bulunması, dağıtılan exe'nin içinde "tüm tabloyu sil" tarifi taşımak
+  // demekti. Toplu geri yükleme gerçekten gerekirse yetkili bir rol altında
+  // (sunucu tarafı) yeniden tasarlanmalıdır.
 
   // PostgREST tek istekte en fazla 1000 satır döndürür ve sınıra takıldığında
   // hata vermez. Bu liste dashboard sayaçlarının, stok/adres ekranlarının ve

@@ -3,7 +3,6 @@ import { AppLayout, type AppPage } from './layouts/AppLayout'
 import { StocksPage } from './pages/StocksPage'
 import { AddressesPage } from './pages/AddressesPage'
 import { ProductDetailPage } from './pages/ProductDetailPage'
-import { ConflictsPage } from './pages/ConflictsPage'
 import { AuditLogsPage } from './pages/AuditLogsPage'
 import { OperationsPage } from './pages/OperationsPage'
 import { CabaLookupPage } from './pages/CabaLookupPage'
@@ -41,7 +40,6 @@ export function App() {
       {activePage === 'import' && <ImportPage />}
       {activePage === 'export' && <OperationsPage page="export" />}
       {activePage === 'settings' && <OperationsPage page="settings" />}
-      {activePage === 'conflicts' && <ConflictsPage />}
       {activePage === 'audit' && <AuditLogsPage />}
     </AppLayout>
   )

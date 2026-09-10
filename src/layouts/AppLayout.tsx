@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
-import { Boxes, ChevronLeft, ClipboardList, FileWarning, History, Home, Import, MapPin, PackageSearch, Search, Settings, Upload, X } from 'lucide-react'
+import { Boxes, ChevronLeft, ClipboardList, History, Home, Import, MapPin, PackageSearch, Search, Settings, Upload, X } from 'lucide-react'
 import { addressRecordService } from '../data/localData'
 import { listProducts } from '../services/productService'
 import { searchProducts } from '../services/productSearch'
 import type { AddressRecord } from '../types/addressRecord'
 import type { Product } from '../types/product'
 
-export type AppPage = 'dashboard' | 'stocks' | 'addresses' | 'find' | 'caba' | 'conflicts' | 'audit' | 'import' | 'export' | 'settings'
+export type AppPage = 'dashboard' | 'stocks' | 'addresses' | 'find' | 'caba' | 'audit' | 'import' | 'export' | 'settings'
 type AppLayoutProps = { children: ReactNode; activePage: AppPage; onNavigate: (page: AppPage) => void; onProductSelect: (productId: string) => void }
 type NavItem = { id: AppPage; label: string; icon: typeof Home }
 
@@ -17,7 +17,7 @@ const MAX_STOCK_RESULTS = 7
 const navigationGroups: { label: string; items: NavItem[] }[] = [
   { label: 'Operasyon', items: [{ id: 'dashboard', label: 'Genel Bakış', icon: Home }, { id: 'stocks', label: 'Stoklar', icon: Boxes }, { id: 'addresses', label: 'Adresler', icon: MapPin }, { id: 'find', label: 'Adres Bul', icon: PackageSearch }, { id: 'caba', label: 'CABA Listesi', icon: ClipboardList }] },
   { label: 'Veri', items: [{ id: 'import', label: 'İçe Aktar', icon: Import }, { id: 'export', label: 'Dışa Aktar', icon: Upload }] },
-  { label: 'Sistem', items: [{ id: 'conflicts', label: 'Çakışmalar', icon: FileWarning }, { id: 'audit', label: 'İşlem Geçmişi', icon: History }, { id: 'settings', label: 'Ayarlar', icon: Settings }] },
+  { label: 'Sistem', items: [{ id: 'audit', label: 'İşlem Geçmişi', icon: History }, { id: 'settings', label: 'Ayarlar', icon: Settings }] },
 ]
 const commandItems: Array<{ label: string; page: AppPage; hint: string }> = [{ label: 'Stok ara', page: 'stocks', hint: 'Stok listesine git' }, { label: 'Adres ara', page: 'find', hint: 'Hızlı operasyon araması' }, { label: 'CABA listesi', page: 'caba', hint: 'Fiş yapıştır, adresleri bul' }, { label: 'Stok ekle', page: 'stocks', hint: 'Stoklar ekranını aç' }, { label: 'Excel içe aktar', page: 'import', hint: 'Veri içe aktarma' }, { label: 'Dışa aktar', page: 'export', hint: 'Veri dışa aktarma' }, { label: 'Ayarlar', page: 'settings', hint: 'Uygulama tercihleri' }]
 
