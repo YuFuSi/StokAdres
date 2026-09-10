@@ -6,9 +6,10 @@
 //
 // Sema degistiginde (yeni migration) bu dosya da yenilenmelidir.
 //
-// 2026-09-10: 20260910000100 migration'i ile products_with_metrics view'i
-// ve pg_trgm eklendi. View kolonlari nullable gorunur (Postgres view uzerinden
-// NOT NULL garantisi veremez) - productService bunu ?? ile karsilar.
+// 2026-09-10: 20260910000100 ile products_with_metrics view'i ve pg_trgm,
+// 20260910000200 ile dashboard_summary view'i eklendi. View kolonlari nullable
+// gorunur (Postgres view uzerinden NOT NULL garantisi veremez) - productService
+// ve dashboardService bunu ?? ile karsilar.
 
 export type Json =
   | string
@@ -299,6 +300,15 @@ export type Database = {
       }
     }
     Views: {
+      dashboard_summary: {
+        Row: {
+          active_address_records: number | null
+          products_with_address: number | null
+          total_cartons: number | null
+          total_products: number | null
+        }
+        Relationships: []
+      }
       products_with_metrics: {
         Row: {
           address_count: number | null

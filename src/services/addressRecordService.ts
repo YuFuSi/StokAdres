@@ -175,6 +175,22 @@ export class AddressRecordService {
     return rows.map((record) => this.mapRecord(record))
   }
 
+  /**
+   * Genel Bakış'taki "son eklenenler" listesi için yalnızca son N kaydı çeker.
+   * Eskiden bu, list() ile tüm tabloyu çekip istemcide sıralayarak yapılıyordu;
+   * 100k ölçeğinde beş satır göstermek için tüm tabloyu indirmek anlamsız.
+   */
+  async listRecent(limit: number): Promise<AddressRecord[]> {
+    const { data, error } = await supabase
+      .from('address_records')
+      .select('id, product_id, address, carton_count, is_active, created_at, updated_at, products!inner(stock_code, stock_name)')
+      .order('created_at', { ascending: false })
+      .order('id', { ascending: false })
+      .limit(limit)
+    if (error) throw error
+    return (data ?? []).map((record) => this.mapRecord(record as unknown as AddressRecordRow))
+  }
+
   async listProducts(): Promise<Product[]> {
     return listProducts()
   }

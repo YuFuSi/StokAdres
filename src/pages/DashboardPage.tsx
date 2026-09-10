@@ -39,15 +39,15 @@ export function DashboardPage({ onNavigate }: { onNavigate: (page: AppPage) => v
           <section className="dashboard-metrics" aria-label="Stok metrikleri">
             <Metric label="Toplam stok" hint="Kayıtlı ürün kartı" value={data.totalStocks} />
             <Metric label="Toplam koli" hint="Aktif konumlardaki miktar" value={data.totalCartons} />
-            <Metric label="Adresli stok" hint="Fiziksel konumu olan" value={data.totalStocks - data.stocksWithoutAddress} />
-            <Metric label="Adresi olmayan" hint="Konum bekleyen ürün" value={data.stocksWithoutAddress} />
+            <Metric label="Adresli stok" hint="Fiziksel konumu olan" value={data.productsWithAddress} />
+            <Metric label="Adresi olmayan" hint="Konum bekleyen ürün" value={data.productsWithoutAddress} />
           </section>
           <section className="dashboard-operations">
-            <div className="dashboard-activity"><div className="section-heading"><h2>Son İşlemler</h2><span className="section-heading__line" /></div><p><span className="status-dot" /> {data.totalActiveRecords} aktif adres kaydı depoda takip ediliyor.</p><p className="dashboard-activity__hint">Kayıt ayrıntıları ve geçmiş hareketler sistem ekranından izlenebilir.</p></div>
+            <div className="dashboard-activity"><div className="section-heading"><h2>Son İşlemler</h2><span className="section-heading__line" /></div><p><span className="status-dot" /> {data.activeAddressRecords} aktif adres kaydı depoda takip ediliyor.</p><p className="dashboard-activity__hint">Kayıt ayrıntıları ve geçmiş hareketler sistem ekranından izlenebilir.</p></div>
             <div className="dashboard-quick"><div className="section-heading"><h2>Hızlı İşlemler</h2></div><div>{[[PackagePlus,'Stok Ekle','stocks'],[MapPin,'Adres Bul','find'],[Upload,'Excel İçe Aktar','import'],[Download,'Dışa Aktar','export']].map(([Icon,label,page]) => { const ActionIcon = Icon as typeof PackagePlus; return <button key={label as string} type="button" onClick={() => onNavigate(page as AppPage)}><ActionIcon size={16}/><span>{label as string}</span><ArrowRight size={14}/></button> })}</div></div>
           </section>
           <section className="dashboard-section" aria-labelledby="recent-records-title">
-            <div className="section-heading"><h2 id="recent-records-title">Son Eklenen Stoklar</h2><span className="section-heading__line" /></div>
+            <div className="section-heading"><h2 id="recent-records-title">Son Eklenen Adresler</h2><span className="section-heading__line" /></div>
             {data.recentRecords.length === 0 ? (
               <p className="dashboard-empty">Henüz kayıt bulunmuyor.</p>
             ) : (
