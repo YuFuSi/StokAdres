@@ -154,7 +154,7 @@ export function ImportPage() {
   if (stage === 'input' && operation) {
     return (
       <main className="operations-page import-page">
-        <Intro eyebrow="İÇE AKTAR" title={operation.title} description="Veriyi yapıştırın; onaylamadan önce satır satır kontrol edeceksiniz." />
+        <Intro title={operation.title} description="Veriyi yapıştırın; onaylamadan önce satır satır kontrol edeceksiniz." />
         <section className="caba-input">
           <label className="caba-paste">
             <span className="caba-paste__label"><ClipboardPaste size={15} /> Excel'den yapıştırın</span>
@@ -187,7 +187,7 @@ export function ImportPage() {
   if (stage === 'done' && outcome && operation) {
     return (
       <main className="operations-page import-page">
-        <Intro eyebrow="İÇE AKTAR" title="Sonuç" description={operation.title} />
+        <Intro title="Sonuç" description={operation.title} />
         <section className="caba-summary">
           <div><strong>{outcome.applied}</strong><span>kayıt yazıldı</span></div>
           <div className={outcome.failed.length ? 'caba-summary__warn' : undefined}><strong>{outcome.failed.length}</strong><span>başarısız</span></div>
@@ -222,7 +222,7 @@ export function ImportPage() {
 
   return (
     <main className="operations-page import-page">
-      <Intro eyebrow="İÇE AKTAR / ÖNİZLEME" title={operation?.title ?? ''} description={`${sourceLabel} · ${rows.length} satır. Hatalı satırları tabloda düzeltebilirsiniz.`} />
+      <Intro title={operation?.title ?? ''} description={`${sourceLabel} · ${rows.length} satır. Hatalı satırları tabloda düzeltebilirsiniz.`} />
 
       <section className="import-counts" aria-label="Önizleme özeti">
         <span className="import-count import-count--ready">{counts.ready} yazılacak</span>
@@ -328,8 +328,8 @@ function EditableCell({ value, onChange, mono, narrow }: { value: string; onChan
   )
 }
 
-function Intro({ eyebrow = 'VERİ', title, description }: { eyebrow?: string; title: string; description: string }) {
-  return <header className="page-header"><div><p className="intro__eyebrow">{eyebrow}</p><h1>{title}</h1><p className="page-header__description">{description}</p></div></header>
+function Intro({ title, description }: { title: string; description: string }) {
+  return <header className="page-header"><div><h1>{title}</h1><p className="page-header__description">{description}</p></div></header>
 }
 
 /** PreviewRow'u yeniden kontrol için ayrıştırıcı satır şekline çevirir. */

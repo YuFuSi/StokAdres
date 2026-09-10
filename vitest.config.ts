@@ -6,6 +6,11 @@ import { defineConfig } from 'vitest/config'
 // dogrulayabilmek. Bu mantik yanlis oldugunda depo verisi bozulur, bu yuzden
 // ucuz bir guvenlik agi degerinde.
 export default defineConfig({
+  // vitest.config.ts vite.config.ts'i devralmaz. __APP_VERSION__ orada
+  // taniminlaniyor; burada da tanimli olmazsa bir bileseni ice aktaran ilk
+  // test "__APP_VERSION__ is not defined" ile duser. Testler surumu
+  // dogrulamiyor, o yuzden sabit bir yer tutucu yeterli.
+  define: { __APP_VERSION__: JSON.stringify('0.0.0-test') },
   test: {
     include: ['src/**/*.test.ts'],
     environment: 'node',

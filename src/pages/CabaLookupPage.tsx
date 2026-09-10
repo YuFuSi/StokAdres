@@ -60,8 +60,7 @@ export function CabaLookupPage() {
     <main className="operations-page caba-page">
       <header className="page-header">
         <div>
-          <p className="intro__eyebrow">OPERASYON</p>
-          <h1>CABA ile Adres Bul</h1>
+          <h1>CABA Listesi</h1>
           <p className="page-header__description">CABA'dan aldığınız fişi buraya yapıştırın; stokların depodaki konumları listelensin.</p>
         </div>
       </header>
@@ -126,7 +125,6 @@ function CabaResults({ result, sourceLabel, onReset }: { result: CabaLookupResul
     <main className="operations-page caba-page caba-page--results">
       <header className="page-header caba-results__header">
         <div>
-          <p className="intro__eyebrow">OPERASYON</p>
           <h1>Adres Listesi</h1>
           <p className="page-header__description caba-print-meta">{sourceLabel} · {printedAt}</p>
         </div>

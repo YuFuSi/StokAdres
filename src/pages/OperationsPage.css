@@ -33,3 +33,14 @@
 .finder-result h2 { color: var(--muted); font-size: 14px; font-weight: 500; }
 .finder-more { margin: 12px 2px 0; color: var(--muted); font-size: 12px; }
 .operation-state--error { color: var(--danger); border-color: #e2bdb7; }
+
+/* Faz 4.1 — Adres Bul boş durumu.
+ * 220px yüksekliğinde, dolu beyaz bir kutuydu ve içindeki cümle hemen
+ * üstündeki açıklamanın neredeyse aynısıydı. Boş durum, veri varmış gibi
+ * yer kaplamamalı.
+ *
+ * (.finder-hero düzeltmesi global.css'in sonunda: ölçüldü, global.css paket
+ * içinde sayfa CSS'lerinden SONRA geliyor ve buradaki aynı özgüllükteki bir
+ * kuralı eziyor.) */
+.operation-state { min-height: 132px; background: transparent; border-style: dashed; border-color: var(--line); }
+.operation-state p { max-width: 44ch; text-align: center; line-height: 1.55; }

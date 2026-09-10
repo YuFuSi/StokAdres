@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { ChevronLeft, ChevronRight, MapPin, MoreHorizontal, Plus, Search } from 'lucide-react'
+import { ChevronLeft, ChevronRight, MapPin, Plus, Search } from 'lucide-react'
 import { addressRecordService } from '../data/localData'
 import { ADDRESS_PAGE_SIZE, DuplicateActiveAddressError, type AddressRecordFilter, type AddressRecordSort } from '../services/addressRecordService'
 import { queryProducts, type ProductListItem } from '../services/productService'
 import type { AddressRecord } from '../types/addressRecord'
 import type { Product } from '../types/product'
+import { formatNumber } from '../lib/format'
 import './AddressesPage.css'
 
 type AddressesPageProps = {
@@ -180,7 +181,6 @@ export function AddressesPage({ onBackToDashboard, initialSelectedRecordId = nul
     <main className="addresses-page">
       <header className="addresses-page__header">
         <div>
-          <p className="intro__eyebrow">OPERASYON / FİZİKSEL KONUM</p>
           <h1>Adresler</h1>
           <p className="addresses-page__description">Depodaki fiziksel konumları yönetin.</p>
         </div>
@@ -196,9 +196,9 @@ export function AddressesPage({ onBackToDashboard, initialSelectedRecordId = nul
           <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Adres veya stok kodu ara..." />
         </label>
         <div className="addresses-filter-group" aria-label="Durum filtreleri">
-          <FilterButton active={filter === 'all'} onClick={() => setFilter('all')}>Tümü <strong>{counts.all}</strong></FilterButton>
-          <FilterButton active={filter === 'active'} onClick={() => setFilter('active')}>Aktif <strong>{counts.active}</strong></FilterButton>
-          <FilterButton active={filter === 'inactive'} onClick={() => setFilter('inactive')}>Pasif <strong>{counts.inactive}</strong></FilterButton>
+          <FilterButton active={filter === 'all'} onClick={() => setFilter('all')}>Tümü <strong>{formatNumber(counts.all)}</strong></FilterButton>
+          <FilterButton active={filter === 'active'} onClick={() => setFilter('active')}>Aktif <strong>{formatNumber(counts.active)}</strong></FilterButton>
+          <FilterButton active={filter === 'inactive'} onClick={() => setFilter('inactive')}>Pasif <strong>{formatNumber(counts.inactive)}</strong></FilterButton>
         </div>
         <label className="addresses-sort">Sırala
           <select value={sort} onChange={(event) => setSort(event.target.value as AddressRecordSort)}>
@@ -223,21 +223,21 @@ export function AddressesPage({ onBackToDashboard, initialSelectedRecordId = nul
       {!isLoading && !error && (
         <div className={`addresses-layout ${selectedRecord ? 'addresses-layout--detail-open' : ''}`}>
           <section className="addresses-table-panel" aria-label="Adres kayıtları">
-            <div className="addresses-table-caption"><span>{total === 0 ? '0 kayıt' : `${pageStart + 1}-${pageStart + visibleRecords.length} / ${total} kayıt`}</span><span>Adres bazında görünüm · satıra tıklayarak ayrıntıyı açın</span></div>
+            <div className="addresses-table-caption"><span>{total === 0 ? '0 kayıt' : `${formatNumber(pageStart + 1)}-${formatNumber(pageStart + visibleRecords.length)} / ${formatNumber(total)} kayıt`}</span><span>Satıra tıklayarak ayrıntıyı açın</span></div>
             {total === 0 ? <p className="addresses-state">{counts.all === 0 ? 'Henüz adres kaydı bulunmuyor.' : 'Aramanızla eşleşen adres bulunamadı.'}</p> : (
               <>
               <div className="addresses-table-wrap">
                 <table className="addresses-table">
                   <thead><tr><th>Adres</th><th>Stok kodu</th><th>Stok adı</th><th>Koli</th><th>Durum</th><th>Güncellenme</th><th aria-label="Aksiyon" /></tr></thead>
                   <tbody>{visibleRecords.map((record) => <tr className={selectedRecord?.id === record.id ? 'addresses-row addresses-row--selected' : 'addresses-row'} key={record.id} onClick={() => { setSelectedRecord(record); closeForm() }}>
-                    <td><span className="address-cell"><MapPin size={14}/>{record.address}</span></td><td><strong>{record.stockCode}</strong></td><td className="address-product-name">{record.stockName}</td><td><strong className="carton-cell">{record.cartonCount}</strong></td><td><StatusBadge isActive={record.isActive} /></td><td>{formatDate(record.updatedAt)}</td><td><button className="address-row-action" type="button" aria-label={`${record.address} ayrıntısını aç`} onClick={(event) => { event.stopPropagation(); setSelectedRecord(record); closeForm() }}><MoreHorizontal size={17}/></button></td>
+                    <td><span className="address-cell"><MapPin size={14}/>{record.address}</span></td><td><strong>{record.stockCode}</strong></td><td className="address-product-name">{record.stockName}</td><td><strong className="carton-cell">{formatNumber(record.cartonCount)}</strong></td><td><StatusBadge isActive={record.isActive} /></td><td>{formatDate(record.updatedAt)}</td><td><button className="row-open" type="button" tabIndex={-1} aria-label={`${record.address} ayrıntısını aç`} onClick={(event) => { event.stopPropagation(); setSelectedRecord(record); closeForm() }}><ChevronRight size={16}/></button></td>
                   </tr>)}</tbody>
                 </table>
               </div>
               {pageCount > 1 && (
                 <div className="addresses-pagination">
                   <button className="button button--secondary" type="button" disabled={safePage === 0} onClick={() => setPage((current) => Math.max(0, current - 1))}><ChevronLeft size={15} /> Önceki</button>
-                  <span>Sayfa {safePage + 1} / {pageCount}</span>
+                  <span>Sayfa {formatNumber(safePage + 1)} / {formatNumber(pageCount)}</span>
                   <button className="button button--secondary" type="button" disabled={safePage + 1 >= pageCount} onClick={() => setPage((current) => current + 1)}>Sonraki <ChevronRight size={15} /></button>
                 </div>
               )}
@@ -248,7 +248,7 @@ export function AddressesPage({ onBackToDashboard, initialSelectedRecordId = nul
           {selectedRecord && <aside className="address-detail" aria-label="Adres detayı">
             <div className="address-detail__header"><div><span className="selected-product__label">Adres detayı</span><h2>{selectedRecord.address}</h2><p>{selectedRecord.stockCode}</p></div><button className="modal-close" type="button" onClick={() => { setSelectedRecord(null); closeForm() }} aria-label="Adres detayını kapat">×</button></div>
             <div className="address-detail__product"><span>Stok kodu<strong>{selectedRecord.stockCode}</strong></span><span>Stok adı<strong>{selectedRecord.stockName}</strong></span></div>
-            <div className="address-detail__meta"><span>Adres<strong>{selectedRecord.address}</strong></span><span>Koli<strong>{selectedRecord.cartonCount}</strong></span><span>Durum<StatusBadge isActive={selectedRecord.isActive} /></span></div>
+            <div className="address-detail__meta"><span>Adres<strong>{selectedRecord.address}</strong></span><span>Koli<strong>{formatNumber(selectedRecord.cartonCount)}</strong></span><span>Durum<StatusBadge isActive={selectedRecord.isActive} /></span></div>
             <div className="address-detail__dates"><span>Oluşturulma<strong>{formatDate(selectedRecord.createdAt)}</strong></span><span>Güncellenme<strong>{formatDate(selectedRecord.updatedAt)}</strong></span></div>
             <div className="address-detail__actions"><button className="button button--secondary" type="button" onClick={() => openEditForm(selectedRecord)}>Düzenle</button><button className="button button--danger" type="button" onClick={() => deleteRecord(selectedRecord)}>Sil</button></div>
             {isFormOpen && <AddressForm selectedProduct={selectedProduct} setSelectedProduct={setSelectedProduct} setSelectedProductId={setSelectedProductId} address={address} setAddress={setAddress} cartonCount={cartonCount} setCartonCount={setCartonCount} isActive={isActive} setIsActive={setIsActive} isEditing={Boolean(editingRecordId)} isSaving={isSaving} error={formError} onSubmit={saveRecord} onCancel={closeForm} />}
@@ -302,7 +302,7 @@ function AddressForm(props: AddressFormProps) {
 }
 
 function SummaryMetric({ label, value }: { label: string; value: number }) {
-  return <div><span>{label}</span><strong>{value}</strong></div>
+  return <div><span>{label}</span><strong>{formatNumber(value)}</strong></div>
 }
 
 function formatDate(value: string): string {

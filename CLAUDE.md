@@ -532,3 +532,88 @@ Bunu mümkün kılan değişiklikler:
 silindi; kaydetme zinciri genel amaçlı `saveCsvFile(csv, name)` oldu. Bunlar
 CSV fallback'inin seçilen veri kümesini yok saymasının kaynağıydı — Electron
 dışında her zaman adres kayıtları yazılıyordu.
+
+## 2026-09-10 — Faz 4.1: Arayüz tutarlılığı (1. tur)
+
+Kullanıcı: *"genel olarak böyle tam oturmuş değil, profesyonel bir havası yok."*
+Bu tahminle çözülecek bir şey değildi — uygulama `--remote-debugging-port` ile
+açılıp 1400×900'de 9 ekranın görüntüsü alındı ve şikâyet somut kusurlara
+ayrıştırıldı. Bu tur yalnızca **tartışmasız yanlış** olanları kapsıyor; yoğunluk
+ve hiyerarşi 2. tura bırakıldı.
+
+**1. Sayfa adı ekranda 3–4 kez tekrarlanıyordu.** Kenar çubuğu + üst bardaki
+sabit "StokAdres / Operasyon" + üst bardaki sayfa adı + eyebrow + `<h1>`.
+Üst bar artık tek satır ve **grup gerçek gruptan** geliyor (Ayarlar'da bile
+"Operasyon" yazıyordu). Sayfa eyebrow'ları kaldırıldı.
+İstisna: `ProductDetailPage`'teki "STOK KODU" eyebrow'u gerçek bir etiket,
+altındaki değeri adlandırıyor — duruyor.
+
+**2. Sayılar iki farklı dildeydi.** Genel Bakış `94.900`, Stoklar `94900`,
+Adresler `2818`. Tek otorite: [src/lib/format.ts](src/lib/format.ts)
+`formatNumber()`. Yeni bir sayı ekrana basılacaksa buradan geçsin.
+
+**3. Adres Bul'daki "çift çerçeve" — teşhis ilk tahminden farklı çıktı.**
+İlk varsayım sarmalayıcının (`.finder-hero`) kendi çizgisiydi; onu kaldırmak
+sorunu ÇÖZMEDİ. Computed style ölçümü gerçek sebebi verdi: global
+`input:focus-visible` kuralı, sarmalayıcı zaten `:focus-within` halkası
+çizerken input'a ayrıca `outline: 2.67px` / `offset: 2px` uyguluyordu — iç içe
+iki halka. Outline yalnızca sarmalayıcısında **görünür** `:focus-within`
+halkası olan dört alanda kapatıldı; odak her yerde görünür kaldı.
+
+**4. Araç çubukları köşesiz birer kutuydu.** `.stocks-toolbar` /
+`.addresses-toolbar` computed: `borderLeftWidth = borderRightWidth = 1px`.
+Temel kural `border: 1px solid` veriyordu, sonraki katmanlar yalnızca
+`border-top`/`border-bottom`'ı yeniden tanımladığı için yanlar hiç
+sıfırlanmamıştı. "Üstten ve alttan çizgi" diye tasarlanan şerit kutu olarak
+çiziliyordu.
+
+**5. Stoklar'daki "Durum" sütunu sıfır bilgi taşıyordu.** Canlıda doğrulandı:
+`aktif = 94.900, pasif = 0`. Sütun kaldırıldı (veri duruyor; dışa aktarmada ve
+ürün detayında kullanılmaya devam ediyor). Adresler'deki Durum sütunu KALDI —
+orada `is_active` kullanıcının açıp kapattığı gerçek bir alan.
+
+**6. Satır sonu aksiyonu tekleştirildi.** Stoklar'da "Görüntüle" yazan bir
+bağlantı, Adresler'de var olmayan bir menüyü ima eden `⋯` vardı; ikisi de aynı
+işi yapıyordu. Tek bir sessiz `ChevronRight` (`.row-open`). `tabIndex={-1}`:
+satırın kendisi zaten tıklanabilir, sekme sırasına 50 satır boyunca ikinci bir
+durak eklemek gezinmeyi bozuyordu.
+
+**7. Boş hücreler.** "Adres yok" + "0" ikilisi 50 satır boyunca tekrarlanıyordu;
+artık tek tire (`.cell-empty`). Dolu satırlar öne çıkıyor.
+
+**8. Filtre çipleri denetim gibi görünmüyordu.** Yalnızca seçili çipin kutusu
+vardı; "Adresi yok 93.027" düz yazı gibi duruyordu. Adresler'deki segment
+denetiminin aynısı Stoklar'a da uygulandı.
+
+**9. Ayarlar ekranı boştu** — başlık + tek bir "Koyu tema" butonu, açıklamaya
+yapışık. Artık üç satır: tema seçimi (**üç durumlu** — `ThemeProvider`
+`'system'` tercihini zaten destekliyordu ama arayüzde erişilebilir değildi),
+veritabanı bağlantı durumu ve sürüm.
+Sürüm `vite.config.ts` `define` ile **package.json'dan** geliyor
+(`__APP_VERSION__`); elle yazılan bir sabit kaçınılmaz olarak saparadı.
+`vitest.config.ts` `vite.config.ts`'i devralmaz — orada da bir yer tutucu
+tanımlandı, yoksa bir bileşeni içe aktaran ilk test düşerdi.
+
+**10. Küçük tutarsızlıklar.** Kenar çubuğu "CABA Listesi" derken başlık "CABA
+ile Adres Bul" diyordu → eşitlendi. Genel Bakış'taki "Canlı veri" rozeti kenar
+çubuğundaki bağlantı göstergesini tekrarlıyordu → kaldırıldı. Adres Bul'un boş
+durumu 220px'lik dolu beyaz bir kutuydu ve içindeki cümle üstündeki açıklamanın
+neredeyse aynısıydı → 132px, saydam, metinler ayrıştırıldı.
+
+**Ölü CSS temizlendi:** `.stock-status`, `.table-action`, `.address-row-action`,
+`.application-bar__eyebrow`.
+
+### ⚠️ Yeni tuzak: global.css sayfa CSS'lerini eziyor
+`.finder-hero` düzeltmesi `OperationsPage.css`'e yazıldığında **etkisiz kaldı**
+(computed hâlâ `padding: 18px 0 22px`). Ölçüldü: `global.css` paket içinde
+sayfa CSS'lerinden **sonra** geliyor, dolayısıyla aynı özgüllükteki kuralı
+eziyor. Bir sayfa kuralı global.css'in "V4"/"V5" bloklarında da tanımlıysa
+düzeltme global.css'in sonuna yazılmalı. Bu turdaki düzeltmeler orada, açık
+başlıklı bir blokta toplandı.
+
+**Doğrulama:** typecheck PASS · 21/21 test PASS · build PASS · 9 ekranda konsol
+temiz (hata ve uyarı yok) · her düzeltme computed style ile teyit edildi.
+
+**2. tur (bekliyor):** satır yoğunluğu (Stoklar 50,7px / Adresler 62px — iki
+tablo farklı), boş ekranlardaki dikey boşluk yönetimi, Genel Bakış'taki
+"Son İşlemler" panelinin bitmemiş görünümü, arama kutusu/filtre oranı.

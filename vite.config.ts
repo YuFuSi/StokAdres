@@ -1,5 +1,10 @@
+import { readFileSync } from 'node:fs'
 import { defineConfig, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
+
+// Ayarlar ekranı sürüm numarasını gösteriyor. Elle yazılan bir sabit
+// package.json'dan kaçınılmaz olarak sapardı; tek kaynak package.json.
+const { version: APP_VERSION } = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')) as { version: string }
 
 // Paketlenmis uygulamanin ihtiyac duydugu TEK harici kaynaklar:
 //   fonts.googleapis.com  -> global.css'teki @import (stylesheet)
@@ -46,6 +51,7 @@ export default defineConfig({
   // Mutlak '/assets/...' yolları file:// altında sürücü köküne çözülür ve
   // beyaz ekrana yol açar; göreli base bunu önler. Dev sunucusu etkilenmez.
   base: './',
+  define: { __APP_VERSION__: JSON.stringify(APP_VERSION) },
   plugins: [react(), productionCsp()],
   build: {
     outDir: 'dist'

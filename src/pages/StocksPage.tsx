@@ -11,6 +11,7 @@ import {
   type ProductListItem,
   type ProductListSort,
 } from '../services/productService'
+import { formatNumber } from '../lib/format'
 import './StocksPage.css'
 
 type StocksPageProps = {
@@ -166,7 +167,6 @@ export function StocksPage({ onBackToDashboard, onProductSelect, initialFilter =
     <main className="stocks-page">
       <header className="stocks-page__header">
         <div>
-          <p className="intro__eyebrow">OPERASYON / ENVANTER</p>
           <h1>Stoklar</h1>
           <p className="stocks-page__description">Stok kayıtlarını görüntüleyin ve yönetin.</p>
         </div>
@@ -182,10 +182,10 @@ export function StocksPage({ onBackToDashboard, onProductSelect, initialFilter =
           <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Stok kodu, isim veya barkod ara..." />
         </label>
         <div className="stocks-filter-group" aria-label="Adres filtreleri">
-          <button className={filter === 'all' ? 'stocks-filter stocks-filter--active' : 'stocks-filter'} type="button" onClick={() => setFilter('all')}>Tümü <strong>{counts.all}</strong></button>
-          <button className={filter === 'no-address' ? 'stocks-filter stocks-filter--active' : 'stocks-filter'} type="button" onClick={() => setFilter('no-address')}>Adresi yok <strong>{counts.none}</strong></button>
-          <button className={filter === 'single-address' ? 'stocks-filter stocks-filter--active' : 'stocks-filter'} type="button" onClick={() => setFilter('single-address')}>Tek adres <strong>{counts.single}</strong></button>
-          <button className={filter === 'multiple-addresses' ? 'stocks-filter stocks-filter--active' : 'stocks-filter'} type="button" onClick={() => setFilter('multiple-addresses')}>Çoklu adres <strong>{counts.multiple}</strong></button>
+          <button className={filter === 'all' ? 'stocks-filter stocks-filter--active' : 'stocks-filter'} type="button" onClick={() => setFilter('all')}>Tümü <strong>{formatNumber(counts.all)}</strong></button>
+          <button className={filter === 'no-address' ? 'stocks-filter stocks-filter--active' : 'stocks-filter'} type="button" onClick={() => setFilter('no-address')}>Adresi yok <strong>{formatNumber(counts.none)}</strong></button>
+          <button className={filter === 'single-address' ? 'stocks-filter stocks-filter--active' : 'stocks-filter'} type="button" onClick={() => setFilter('single-address')}>Tek adres <strong>{formatNumber(counts.single)}</strong></button>
+          <button className={filter === 'multiple-addresses' ? 'stocks-filter stocks-filter--active' : 'stocks-filter'} type="button" onClick={() => setFilter('multiple-addresses')}>Çoklu adres <strong>{formatNumber(counts.multiple)}</strong></button>
         </div>
         <label className="stocks-sort">Sırala
           <select value={sort} onChange={(event) => setSort(event.target.value as ProductListSort)}>
@@ -202,8 +202,8 @@ export function StocksPage({ onBackToDashboard, onProductSelect, initialFilter =
         <div className="stocks-layout stocks-layout--list-only">
           <section className="stocks-table-panel" aria-label="Stok listesi">
             <div className="stocks-table-caption">
-              <span>{total} stok{total > 0 && <> · {rangeStart}-{rangeEnd} arası</>}</span>
-              <span>Ürün bazında görünüm · satıra tıklayarak açın</span>
+              <span>{formatNumber(total)} stok{total > 0 && <> · {formatNumber(rangeStart)}-{formatNumber(rangeEnd)} arası</>}</span>
+              <span>Satıra tıklayarak stok kartını açın</span>
             </div>
             {isLoading && products.length === 0 ? <p className="stocks-state" role="status">Stoklar yükleniyor...</p>
               : total === 0 && debouncedQuery ? <p className="stocks-state">Aramanızla eşleşen stok bulunamadı.</p>
@@ -211,16 +211,15 @@ export function StocksPage({ onBackToDashboard, onProductSelect, initialFilter =
               <>
                 <div className={isLoading ? 'stocks-table-wrap stocks-table-wrap--loading' : 'stocks-table-wrap'}>
                   <table className="stocks-table">
-                    <thead><tr><th>Stok kodu</th><th>Stok</th><th>Barkod</th><th>Adres</th><th>Koli</th><th>Durum</th><th aria-label="İşlemler" /></tr></thead>
+                    <thead><tr><th>Stok kodu</th><th>Stok</th><th>Barkod</th><th>Adres</th><th>Koli</th><th aria-label="İşlemler" /></tr></thead>
                     <tbody>{products.map((product) => (
                       <tr className="stocks-row" key={product.id} onClick={() => onProductSelect(product.id)}>
                         <td><strong>{product.stockCode}</strong></td>
                         <td>{product.stockName}</td>
                         <td className="barcode-summary">{product.barcodes.length ? <><span>{product.barcodes[0]}</span>{product.barcodes.length > 1 && <small>+{product.barcodes.length - 1} barkod</small>}</> : <span>—</span>}</td>
-                        <td>{product.addressCount ? `${product.addressCount} adres` : 'Adres yok'}</td>
-                        <td>{product.totalCartons}</td>
-                        <td><span className="stock-status">{product.isActive === false ? 'Pasif' : 'Aktif'}</span></td>
-                        <td><button className="table-action" type="button" onClick={(event) => { event.stopPropagation(); onProductSelect(product.id) }}>Görüntüle</button></td>
+                        <td>{product.addressCount ? `${formatNumber(product.addressCount)} adres` : <span className="cell-empty">—</span>}</td>
+                        <td>{product.totalCartons ? formatNumber(product.totalCartons) : <span className="cell-empty">—</span>}</td>
+                        <td><button className="row-open" type="button" tabIndex={-1} aria-label={`${product.stockCode} stok kartını aç`} onClick={(event) => { event.stopPropagation(); onProductSelect(product.id) }}><ChevronRight size={16} /></button></td>
                       </tr>
                     ))}</tbody>
                   </table>
@@ -228,7 +227,7 @@ export function StocksPage({ onBackToDashboard, onProductSelect, initialFilter =
                 {pageCount > 1 && (
                   <div className="stocks-pagination">
                     <button className="button button--secondary" type="button" disabled={page === 0 || isLoading} onClick={() => setPage((current) => Math.max(0, current - 1))}><ChevronLeft size={15} /> Önceki</button>
-                    <span>Sayfa {page + 1} / {pageCount}</span>
+                    <span>Sayfa {formatNumber(page + 1)} / {formatNumber(pageCount)}</span>
                     <button className="button button--secondary" type="button" disabled={page + 1 >= pageCount || isLoading} onClick={() => setPage((current) => current + 1)}>Sonraki <ChevronRight size={15} /></button>
                   </div>
                 )}
@@ -240,7 +239,7 @@ export function StocksPage({ onBackToDashboard, onProductSelect, initialFilter =
       {isCreateFormOpen && <div className="stocks-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) closeCreateForm() }}>
         <section className="stocks-modal" role="dialog" aria-modal="true" aria-labelledby="create-stock-title">
           <div className="stocks-modal__header">
-            <div><p className="intro__eyebrow">YENİ STOK</p><h2 id="create-stock-title">Yeni Stok</h2><p className="stocks-modal__description">Stok kodu ve isim bilgilerini girin. Barkodları daha sonra da ekleyebilirsiniz.</p></div>
+            <div><h2 id="create-stock-title">Yeni Stok</h2><p className="stocks-modal__description">Stok kodu ve isim bilgilerini girin. Barkodları daha sonra da ekleyebilirsiniz.</p></div>
             <button className="modal-close" type="button" onClick={closeCreateForm} aria-label="Stok ekleme formunu kapat"><X size={18}/></button>
           </div>
           <form className="stocks-create-form" onSubmit={saveProduct}>

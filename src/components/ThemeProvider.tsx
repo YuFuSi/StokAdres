@@ -1,7 +1,9 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
 import { getLocalStorage } from '../data/localStorage'
 
-type Theme = 'light' | 'dark' | 'system'
+/** Kullanıcının seçtiği tercih. 'system' çözümlenmiş tema değil, tercihin kendisidir. */
+export type ThemePreference = 'light' | 'dark' | 'system'
+type Theme = ThemePreference
 type ThemeContextValue = { theme: Theme; setTheme: (theme: Theme) => void; toggleTheme: () => void }
 const ThemeContext = createContext<ThemeContextValue | null>(null)
 

@@ -36,7 +36,7 @@ export function AuditLogsPage() {
   }, [action, entityType, query, from, to])
 
   return <main className="audit-page">
-    <header className="audit-page__header"><div><p className="intro__eyebrow">SİSTEM</p><h1>İşlem Geçmişi</h1><p className="audit-page__description">Uygulamada gerçekleşen değişikliklerin değiştirilemez kaydı</p></div></header>
+    <header className="audit-page__header"><div><h1>İşlem Geçmişi</h1><p className="audit-page__description">Uygulamada gerçekleşen değişikliklerin değiştirilemez kaydı</p></div></header>
     <section className="audit-filters" aria-label="İşlem geçmişi filtreleri">
       <input placeholder="Stok kodu, stok adı veya açıklama ara..." value={query} onChange={(event) => setQuery(event.target.value)} />
       <select value={action} onChange={(event) => setAction(event.target.value as AuditAction | '')}><option value="">Tüm işlemler</option>{Object.entries(actionLabels).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select>

@@ -6,7 +6,9 @@ import { addressRows, exportWorkbook, stockAddressRows, stockRows, summaryRows, 
 import { getProductFilterCounts, listProducts, queryProducts, type ProductListItem } from '../services/productService'
 import { findActiveAddresses, findBarcodesByProductId, type AddressLite } from '../services/productLookup'
 import type { Product } from '../types/product'
-import { useTheme } from '../components/ThemeProvider'
+import { useTheme, type ThemePreference } from '../components/ThemeProvider'
+import { checkConnection, type ConnectionState } from '../services/connectionStatus'
+import { formatNumber } from '../lib/format'
 import './OperationsPage.css'
 
 // 'import' artık burada değil: içe aktarma kendi ekranına taşındı
@@ -100,7 +102,7 @@ function ExportHub() {
   }
 
   return <main className="operations-page">
-    <Intro eyebrow="VERİ" title="Dışa Aktar" description="Önce veri kümesini, ardından dosya formatını seçin." />
+    <Intro title="Dışa Aktar" description="Önce veri kümesini, ardından dosya formatını seçin." />
     <section className="export-flow">
       <Choice title="Veri" value={datasets[0] ?? ''} onChange={value => format === 'csv' ? setDatasets([value as ExportDataset]) : toggle(value as ExportDataset)} options={[['stocks', 'Stoklar'], ['addresses', 'Adresler'], ['stock-address', 'Stok + Adres'], ['summary', 'Özet']]} />
       {format === 'xlsx' && <p className="export-hint">Excel için birden çok veri kümesini seçebilirsiniz.</p>}
@@ -195,7 +197,7 @@ function Finder() {
   const visible = results
 
   return <main className="operations-page">
-    <Intro eyebrow="OPERASYON" title="Adres Bul" description="Stok kodu, stok adı veya barkod yazın; ya da bir adres yazıp o rafta ne olduğunu görün." />
+    <Intro title="Adres Bul" description="Stoktan adrese, adresten stoğa arama." />
     <section className="finder-hero">
       <label className="finder-input">
         <Search size={19} />
@@ -205,7 +207,7 @@ function Finder() {
     </section>
 
     {error && <div className="operation-state operation-state--error" role="alert"><p>{error}</p></div>}
-    {!error && !trimmedQuery && <div className="operation-state"><p>Aramak için stok kodu, stok adı veya barkod yazın. Adres yazarsanız (örn. G27-04) o raftaki ürünler listelenir.</p></div>}
+    {!error && !trimmedQuery && <div className="operation-state"><p>Stok kodu, stok adı veya barkod yazın. Adres yazarsanız (örn. G27-04) o raftaki ürünler listelenir.</p></div>}
     {!error && trimmedQuery && isSearching && <div className="operation-state" role="status"><p>Aranıyor…</p></div>}
     {!error && trimmedQuery && !isSearching && visible.length === 0 && <div className="operation-state" role="status"><p>“{trimmedQuery}” ile eşleşen stok bulunamadı.</p></div>}
 
@@ -225,19 +227,62 @@ function Finder() {
               </div>
               <strong className="finder-result__address">
                 {primary ? primary.address : 'Adres yok'}
-                <small>{primary ? `${primary.cartonCount} koli${addresses.length > 1 ? ` · +${addresses.length - 1} konum` : ''}` : 'Kayıtlı konum yok'}</small>
+                <small>{primary ? `${formatNumber(primary.cartonCount)} koli${addresses.length > 1 ? ` · +${addresses.length - 1} konum` : ''}` : 'Kayıtlı konum yok'}</small>
               </strong>
             </div>
             {addresses.length > 1 && <div className="finder-addresses">
-              {addresses.map((record) => <div key={record.id}><strong>{record.address}</strong><span>{record.cartonCount} koli</span></div>)}
+              {addresses.map((record) => <div key={record.id}><strong>{record.address}</strong><span>{formatNumber(record.cartonCount)} koli</span></div>)}
             </div>}
           </article>
         })}
       </section>
-      {total > visible.length && <p className="finder-more">{total} sonuçtan ilk {visible.length} tanesi gösteriliyor. Aramanızı daraltın.</p>}
+      {total > visible.length && <p className="finder-more">{formatNumber(total)} sonuçtan ilk {visible.length} tanesi gösteriliyor. Aramanızı daraltın.</p>}
     </>}
   </main>
 }
-function Settings() { const { theme, toggleTheme } = useTheme(); return <main className="operations-page"><Intro eyebrow="SİSTEM" title="Ayarlar" description="Uygulama tercihleri."/><button className="button button--secondary" onClick={toggleTheme}>{theme === 'light' ? 'Koyu tema' : 'Açık tema'}</button></main> }
-function Intro({ eyebrow, title, description }: { eyebrow: string; title: string; description: string }) { return <header className="page-header"><div><p className="intro__eyebrow">{eyebrow}</p><h1>{title}</h1><p className="page-header__description">{description}</p></div></header> }
+/**
+ * Ayarlar ekranı.
+ *
+ * Eskiden başlık + tek bir "Koyu tema" butonundan ibaretti; ekranın geri kalanı
+ * boştu ve buton açıklamaya yapışıktı. Artık üç satır: tema seçimi (üç durumlu,
+ * çünkü ThemeProvider 'system' tercihini zaten destekliyordu ama arayüzde
+ * erişilebilir değildi), veritabanı durumu ve sürüm bilgisi.
+ */
+const THEME_OPTIONS: Array<[ThemePreference, string]> = [['light', 'Açık'], ['dark', 'Koyu'], ['system', 'Sistem']]
+const SETTINGS_CONNECTION_TEXT: Record<ConnectionState, string> = { checking: 'Denetleniyor…', online: 'Bağlantı kurulu', offline: 'Ulaşılamıyor' }
+
+function Settings() {
+  const { theme, setTheme } = useTheme()
+  const [connection, setConnection] = useState<ConnectionState>('checking')
+
+  useEffect(() => {
+    let cancelled = false
+    void checkConnection().then((ok) => { if (!cancelled) setConnection(ok ? 'online' : 'offline') })
+    return () => { cancelled = true }
+  }, [])
+
+  return <main className="operations-page">
+    <Intro title="Ayarlar" description="Uygulama tercihleri ve sistem bilgileri." />
+    <section className="settings-cards" aria-label="Ayarlar">
+      <article>
+        <h2>Görünüm</h2>
+        <p>Arayüz teması. “Sistem” seçilirse Windows’un açık/koyu tercihi izlenir.</p>
+        <div className="theme-segment" role="group" aria-label="Tema seçimi">
+          {THEME_OPTIONS.map(([value, label]) => <button key={value} type="button" aria-pressed={theme === value} className={theme === value ? 'theme-choice theme-choice--active' : 'theme-choice'} onClick={() => setTheme(value)}>{label}</button>)}
+        </div>
+      </article>
+      <article>
+        <h2>Veritabanı</h2>
+        <p>Kayıtlar Supabase üzerinde tutulur. Uygulama açıldığında canlı veriyi okur.</p>
+        <span className="settings-value"><span className={`status-dot status-dot--${connection}`} />{SETTINGS_CONNECTION_TEXT[connection]}</span>
+      </article>
+      <article>
+        <h2>Uygulama</h2>
+        <p>StokAdres masaüstü sürümü.</p>
+        <span className="settings-value">Sürüm {__APP_VERSION__}</span>
+      </article>
+    </section>
+  </main>
+}
+function Intro({ title, description }: { title: string; description: string }) { return <header className="page-header"><div><h1>{title}</h1><p className="page-header__description">{description}</p></div></header> }
 function Choice({ title, value, onChange, options }: { title: string; value: string; onChange: (value: string) => void; options: string[][] }) { return <section className="choice-group"><h2>{title}</h2><div>{options.map(([id,label]) => <button key={id} className={value === id ? 'choice choice--active' : 'choice'} onClick={() => onChange(id)}><span>{label}</span><i/></button>)}</div></section> }

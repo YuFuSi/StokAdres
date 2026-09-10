@@ -3,6 +3,7 @@ import { getDashboardData, type DashboardData } from '../services/dashboardServi
 import { ArrowRight, Download, MapPin, PackagePlus, Upload } from 'lucide-react'
 import type { AppPage } from '../layouts/AppLayout'
 import type { ProductListFilter } from '../services/productService'
+import { formatNumber } from '../lib/format'
 
 type DashboardPageProps = {
   onNavigate: (page: AppPage) => void
@@ -32,11 +33,9 @@ export function DashboardPage({ onNavigate, onOpenStocks }: DashboardPageProps) 
     <main className="dashboard-page">
       <header className="page-header">
         <div>
-          <p className="intro__eyebrow">GENEL BAKIŞ</p>
           <h1>Genel Bakış</h1>
           <p className="page-header__description">Depodaki mevcut durumu tek bakışta görün.</p>
         </div>
-        <span className="topbar__status"><span className="status-dot" /> Canlı veri</span>
       </header>
 
       {isLoading && <p className="dashboard-state" role="status">Veriler yükleniyor...</p>}
@@ -54,7 +53,7 @@ export function DashboardPage({ onNavigate, onOpenStocks }: DashboardPageProps) 
             <Metric label="Adresi olmayan" hint="Konum bekleyen ürün" value={data.productsWithoutAddress} onOpen={() => onOpenStocks('no-address')} />
           </section>
           <section className="dashboard-operations">
-            <div className="dashboard-activity"><div className="section-heading"><h2>Son İşlemler</h2><span className="section-heading__line" /></div><p><span className="status-dot" /> {data.activeAddressRecords} aktif adres kaydı depoda takip ediliyor.</p><p className="dashboard-activity__hint">Kayıt ayrıntıları ve geçmiş hareketler sistem ekranından izlenebilir.</p></div>
+            <div className="dashboard-activity"><div className="section-heading"><h2>Son İşlemler</h2><span className="section-heading__line" /></div><p><span className="status-dot" /> {formatNumber(data.activeAddressRecords)} aktif adres kaydı depoda takip ediliyor.</p><p className="dashboard-activity__hint">Kayıt ayrıntıları ve geçmiş hareketler sistem ekranından izlenebilir.</p></div>
             <div className="dashboard-quick"><div className="section-heading"><h2>Hızlı İşlemler</h2></div><div>{[[PackagePlus,'Stok Ekle','stocks'],[MapPin,'Adres Bul','find'],[Upload,'Excel İçe Aktar','import'],[Download,'Dışa Aktar','export']].map(([Icon,label,page]) => { const ActionIcon = Icon as typeof PackagePlus; return <button key={label as string} type="button" onClick={() => onNavigate(page as AppPage)}><ActionIcon size={16}/><span>{label as string}</span><ArrowRight size={14}/></button> })}</div></div>
           </section>
           <section className="dashboard-section" aria-labelledby="recent-records-title">
@@ -70,7 +69,7 @@ export function DashboardPage({ onNavigate, onOpenStocks }: DashboardPageProps) 
                       <td><strong>{record.stockCode}</strong></td>
                       <td>{record.stockName}</td>
                       <td>{record.address}</td>
-                      <td>{record.cartonCount}</td>
+                      <td>{formatNumber(record.cartonCount)}</td>
                       <td>{formatDate(record.createdAt)}</td>
                     </tr>
                   ))}</tbody>
@@ -93,7 +92,7 @@ export function DashboardPage({ onNavigate, onOpenStocks }: DashboardPageProps) 
 function Metric({ label, hint, value, onOpen }: { label: string; hint: string; value: number; onOpen?: () => void }) {
   const body = <>
     <div className="dashboard-metric__top"><span>{label}</span>{onOpen && <ArrowRight size={14} aria-hidden="true" />}</div>
-    <strong>{value.toLocaleString('tr-TR')}</strong>
+    <strong>{formatNumber(value)}</strong>
     <small>{hint}</small>
   </>
   if (!onOpen) return <div className="dashboard-metric">{body}</div>
