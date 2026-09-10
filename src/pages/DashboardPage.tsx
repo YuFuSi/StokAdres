@@ -52,12 +52,16 @@ export function DashboardPage({ onNavigate, onOpenStocks }: DashboardPageProps) 
             <Metric label="Adresli stok" hint="Fiziksel konumu olan" value={data.productsWithAddress} />
             <Metric label="Adresi olmayan" hint="Konum bekleyen ürün" value={data.productsWithoutAddress} onOpen={() => onOpenStocks('no-address')} />
           </section>
+          {/* "Son İşlemler" paneli kaldırıldı: iki cümleden ibaretti, yarım
+              ekran boşluk kaplıyordu ve söylediği şeyi (son hareketler) hemen
+              altındaki "Son Eklenen Adresler" tablosu zaten gösteriyordu.
+              Taşıdığı tek gerçek sayı — aktif kayıt adedi — o tablonun
+              başlığına taşındı. */}
           <section className="dashboard-operations">
-            <div className="dashboard-activity"><div className="section-heading"><h2>Son İşlemler</h2><span className="section-heading__line" /></div><p><span className="status-dot" /> {formatNumber(data.activeAddressRecords)} aktif adres kaydı depoda takip ediliyor.</p><p className="dashboard-activity__hint">Kayıt ayrıntıları ve geçmiş hareketler sistem ekranından izlenebilir.</p></div>
-            <div className="dashboard-quick"><div className="section-heading"><h2>Hızlı İşlemler</h2></div><div>{[[PackagePlus,'Stok Ekle','stocks'],[MapPin,'Adres Bul','find'],[Upload,'Excel İçe Aktar','import'],[Download,'Dışa Aktar','export']].map(([Icon,label,page]) => { const ActionIcon = Icon as typeof PackagePlus; return <button key={label as string} type="button" onClick={() => onNavigate(page as AppPage)}><ActionIcon size={16}/><span>{label as string}</span><ArrowRight size={14}/></button> })}</div></div>
+            <div className="dashboard-quick"><div className="section-heading"><h2>Hızlı İşlemler</h2><span className="section-heading__line" /></div><div className="dashboard-quick__actions">{[[PackagePlus,'Stok Ekle','stocks'],[MapPin,'Adres Bul','find'],[Upload,'Excel İçe Aktar','import'],[Download,'Dışa Aktar','export']].map(([Icon,label,page]) => { const ActionIcon = Icon as typeof PackagePlus; return <button key={label as string} type="button" onClick={() => onNavigate(page as AppPage)}><ActionIcon size={16}/><span>{label as string}</span><ArrowRight size={14}/></button> })}</div></div>
           </section>
           <section className="dashboard-section" aria-labelledby="recent-records-title">
-            <div className="section-heading"><h2 id="recent-records-title">Son Eklenen Adresler</h2><span className="section-heading__line" /></div>
+            <div className="section-heading"><h2 id="recent-records-title">Son Eklenen Adresler</h2><span className="section-heading__line" /><small>{formatNumber(data.activeAddressRecords)} aktif kayıt</small></div>
             {data.recentRecords.length === 0 ? (
               <p className="dashboard-empty">Henüz kayıt bulunmuyor.</p>
             ) : (

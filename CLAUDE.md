@@ -617,3 +617,80 @@ temiz (hata ve uyarı yok) · her düzeltme computed style ile teyit edildi.
 **2. tur (bekliyor):** satır yoğunluğu (Stoklar 50,7px / Adresler 62px — iki
 tablo farklı), boş ekranlardaki dikey boşluk yönetimi, Genel Bakış'taki
 "Son İşlemler" panelinin bitmemiş görünümü, arama kutusu/filtre oranı.
+
+## 2026-09-10 — Faz 4.2: Yoğunluk ve hiyerarşi (2. tur)
+
+1. turda "tartışmasız yanlış" olanlar düzeltilmişti; bu tur ekranların birbirine
+benzemesiyle ilgili. Yine tahminle değil ölçümle: her değişiklik `--remote-debugging-port`
+ile açık uygulamada computed style ve WCAG kontrast hesabıyla doğrulandı.
+
+**1. Üç tablo, üç farklı dil vardı.** Ölçüm: Stoklar satırı 50,7px / 13px yazı
+yok (12px), Adresler 62px / 13px, Genel Bakış 42,7px / 12px. Adresler'de başlık
+şeridi ve odak çizgisi varken Stoklar'da yoktu. Üçü de ortak bir kurala bağlandı:
+54px satır, 13px gövde, 43px başlık şeridi, aynı hover (`inset 3px 0 0 var(--teal)`),
+stok kodu her yerde 12px monospace.
+**Yazı boyutu KÜÇÜLTÜLMEDİ** — ekrana daha çok satır sığsın diye 13px'in altına
+inmek bu kullanıcı için yanlış olurdu. Stoklar 9, Adresler 8 satır gösteriyor.
+
+**2. `.dashboard-quick > div` yanlış elemanı da seçiyordu.** Ölçüm:
+`.section-heading` display=grid, dört sütun. "Hızlı İşlemler" başlığının yanındaki
+ayırıcı çizgi ikinci sütunda kesiliyor, üstüne bir de kenarlık biniyordu. Kural
+artık yalnızca `.dashboard-quick__actions`'a bakıyor.
+
+**3. Genel Bakış'taki "Son İşlemler" paneli kaldırıldı.** İki cümleden ibaretti,
+yarım ekran boşluk kaplıyordu ve söylediği şeyi (son hareketler) hemen altındaki
+tablo zaten gösteriyordu. Taşıdığı tek gerçek sayı — aktif kayıt adedi — o
+tablonun başlığına taşındı. "Hızlı İşlemler" tam genişlikte dört sütun oldu.
+
+**4. Stoklar araç çubuğu Adresler'inkiyle eşitlendi.** Flex + `flex:1` yüzünden
+arama kutusu şeridin neredeyse tamamını yiyordu; artık ikisi de
+`minmax(360px,1fr) auto auto`.
+
+**5. Dışa Aktar'ın adım numaraları bozuktu** — ekranda `01 → (yok) → 03`
+görünüyordu. Numara CSS'teki `:nth-child` sayacından geliyordu; araya koşullu
+bir ipucu paragrafı girdiğinde "Format" üçüncü çocuk oluyor ve numarasız
+kalıyordu. Artık `data-step` ile veriden geliyor.
+⚠️ İlk denemem işe yaramadı: eski `:nth-child(n):before` kurallarını
+`content:none` ile susturmak, ozgullukleri daha yüksek olduğu için bu kez
+**01'i** yok etti. Doğrusu aynı seçicilere aynı `attr(data-step)` değerini
+vermek. Ekranda doğrulandı.
+
+**6. `.export-hint`in hiç CSS kuralı yoktu** — tarayıcı varsayılanıyla 16px koyu
+metin olarak çiziliyor ve ekrandaki en dikkat çekici satır oluyordu.
+
+### 🔴 Koyu temada okunamayan rozetler (Tuzak #10'un aynısı, yeni yerde)
+
+**Ölçüm: `.address-status--active` koyu temada 1,59:1.** Faz 3.3'teki
+`.address-cell` (1,17:1) hatasının birebir aynısı: metin `var(--success)` ile
+temaya göre değişiyor, zemin `#e4f3ec` sabit kalıyor → koyu temada açık yeşil
+üzerine açık yeşil.
+
+Tarama yapıldı, **12 rozet kuralı** aynı desende bulundu (`address-status`,
+`import-status`, `import-count` aileleri). Üç yeni token eklendi —
+`--success-soft`, `--warning-soft`, `--danger-soft` — ve hepsi bunlara bağlandı.
+Nötr rozet ayrı token istemiyor: `--surface-muted` zaten iki temada da `--muted`
+ile ≥4,5:1 (açık 4,60 · koyu 6,37).
+
+Doğrulandı: `.address-status--active` **açık 5,58:1 · koyu 6,81:1**.
+
+**Üst bar zemini de sabit yazılmıştı** (`rgba(255,255,255,.72)`): koyu bir
+uygulamanın tepesinde açık gri bir şerit kalıyor, içindeki breadcrumb neredeyse
+okunmuyordu. Token'a bağlandı.
+
+**1. turdan bir düzeltme geri alındı:** `.cell-empty` opaklığı .45'ti; ölçülünce
+açık temada **1,84:1** çıktı — "yok" bilgisini taşıyan bir işaret için fazla
+soluk. .80'e çıkarıldı (açık 3,31:1 · koyu 4,38:1); dolu hücreler 4,89:1 ile
+yine öne çıkıyor. `.row-open` chevron'u da .45 → .65.
+
+### Yanıldığım bir nokta
+Ekran görüntülerinde Genel Bakış'ın stok adı sütununu "palete uymayan kahverengi
+bir ton" diye not etmiştim. Ölçüm bunu doğrulamadı: o sütun da komşusu da
+`rgb(105,115,114)`. Ekran görüntüsündeki alt piksel yumuşatma artefaktıymış.
+
+**Doğrulama:** typecheck PASS · 21/21 test PASS · build PASS · 9 ekranda konsol
+temiz · açık ve koyu temada ayrı ayrı görüntü alındı · kontrastlar WCAG göreli
+parlaklıkla hesaplandı.
+
+**Kalan (istenirse):** Adres Bul / Ayarlar / Dışa Aktar ekranlarının alt yarısı
+boş — dürüst bir içerik olmadan doldurmanın anlamı yok, bilerek bırakıldı.
+Tablo satırları hâlâ klavyeyle gezilemiyor (`<tr onClick>`).

@@ -104,10 +104,10 @@ function ExportHub() {
   return <main className="operations-page">
     <Intro title="Dışa Aktar" description="Önce veri kümesini, ardından dosya formatını seçin." />
     <section className="export-flow">
-      <Choice title="Veri" value={datasets[0] ?? ''} onChange={value => format === 'csv' ? setDatasets([value as ExportDataset]) : toggle(value as ExportDataset)} options={[['stocks', 'Stoklar'], ['addresses', 'Adresler'], ['stock-address', 'Stok + Adres'], ['summary', 'Özet']]} />
+      <Choice step="01" title="Veri" value={datasets[0] ?? ''} onChange={value => format === 'csv' ? setDatasets([value as ExportDataset]) : toggle(value as ExportDataset)} options={[['stocks', 'Stoklar'], ['addresses', 'Adresler'], ['stock-address', 'Stok + Adres'], ['summary', 'Özet']]} />
       {format === 'xlsx' && <p className="export-hint">Excel için birden çok veri kümesini seçebilirsiniz.</p>}
       {datasets.includes('stocks') && <p className="export-hint">Stoklar kümesi ~95.000 satır; hazırlanması biraz sürer.</p>}
-      <Choice title="Format" value={format} onChange={value => { setFormat(value as 'csv' | 'xlsx'); if (value === 'csv' && datasets.length > 1) setDatasets([datasets[0]]) }} options={[['csv', 'CSV'], ['xlsx', 'Excel (.xlsx)']]} />
+      <Choice step="02" title="Format" value={format} onChange={value => { setFormat(value as 'csv' | 'xlsx'); if (value === 'csv' && datasets.length > 1) setDatasets([datasets[0]]) }} options={[['csv', 'CSV'], ['xlsx', 'Excel (.xlsx)']]} />
       <div className="export-action">
         <p role={isExporting ? 'status' : undefined}>{progress || message || 'CSV tek veri kümesi, Excel seçili veri kümeleri için ayrı worksheet oluşturur.'}</p>
         <button className="button button--primary" disabled={!datasets.length || isExporting} onClick={() => void run()}><Download size={15} /> {isExporting ? 'Hazırlanıyor…' : 'Dışa Aktar'}</button>
@@ -285,4 +285,7 @@ function Settings() {
   </main>
 }
 function Intro({ title, description }: { title: string; description: string }) { return <header className="page-header"><div><h1>{title}</h1><p className="page-header__description">{description}</p></div></header> }
-function Choice({ title, value, onChange, options }: { title: string; value: string; onChange: (value: string) => void; options: string[][] }) { return <section className="choice-group"><h2>{title}</h2><div>{options.map(([id,label]) => <button key={id} className={value === id ? 'choice choice--active' : 'choice'} onClick={() => onChange(id)}><span>{label}</span><i/></button>)}</div></section> }
+// Adim numarasi CSS'teki :nth-child sayacindan geliyordu; araya kosullu bir
+// ipucu paragrafi girdiginde "Format" ucuncu cocuk oluyor ve numarasiz
+// kaliyordu (ekranda 01 -> (yok) -> 03 goruluyordu). Numara artik veriden.
+function Choice({ step, title, value, onChange, options }: { step: string; title: string; value: string; onChange: (value: string) => void; options: string[][] }) { return <section className="choice-group" data-step={step}><h2>{title}</h2><div>{options.map(([id,label]) => <button key={id} className={value === id ? 'choice choice--active' : 'choice'} onClick={() => onChange(id)}><span>{label}</span><i/></button>)}</div></section> }
