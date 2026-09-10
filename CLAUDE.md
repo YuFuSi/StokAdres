@@ -156,11 +156,18 @@ zincirleme silme engellenir. Politikayı büsbütün kaldırma.
 [vite.config.ts](vite.config.ts) — kaldırılırsa production/paketlenmiş uygulama
 beyaz ekran verir (`file://` + mutlak yol).
 
-### 8. `dist-electron/` git'te takipli DEĞİL
+### 8. Uygulama ikonu: `build/icon.ico` **üretilmiş** bir dosyadır
+Kaynak `build/icon.png`. `.ico` gerekiyor çünkü NSIS kurulum sihirbazının
+ikonları PNG kabul etmiyor ("invalid icon file" ile derleme durur).
+İkon değişirse: `powershell -ExecutionPolicy Bypass -File scripts/generate-icon.ps1`
+Script 16–256 arası 7 boyutu 32-bit BGRA DIB girdisi olarak yazar (PNG girdisi
+değil — NSIS'in eski ikon okuyucusu için).
+
+### 9. `dist-electron/` git'te takipli DEĞİL
 Ama `package.json` `main` alanı oraya bakıyor. Build çıktısı, her build'de
 yeniden üretiliyor.
 
-### 9. CSS'te sabit hex yazma — token kullan
+### 10. CSS'te sabit hex yazma — token kullan
 Koyu tema yalnızca `:root[data-theme='dark']` içindeki `--*` token'larını
 değiştirir. Sayfa CSS'ine literal hex yazarsan koyu temada olduğu gibi kalır.
 Faz 3.3'te `.address-cell { color:#273131 }` yüzünden ADRES kolonu **1.17:1**
@@ -174,7 +181,7 @@ Yeni renk eklerken **koyu karşılığını da** `:root[data-theme='dark']`'a ya
 `global.css` tek bir `:root` bloğu içerir. Eskiden üç rakip blok vardı; ikinci
 bir tane ekleme.
 
-### 10. `supabase.ts` modül yüklenirken hata fırlatır — testleri etkiler
+### 11. `supabase.ts` modül yüklenirken hata fırlatır — testleri etkiler
 `VITE_SUPABASE_URL`/`VITE_SUPABASE_ANON_KEY` yoksa `src/lib/supabase.ts`
 **import anında** hata fırlatır (Sprint 0.2; sessizce yanlış çalışmasın diye
 kasıtlı). Sonuç: `supabase.ts`'i dolaylı da olsa import eden her test dosyası,
@@ -184,7 +191,7 @@ CI bu yüzden placeholder `VITE_SUPABASE_*` değerleri veriyor
 ([ci.yml](.github/workflows/ci.yml)). Yeni test yazarken saf fonksiyonları
 Supabase import eden modüllerden ayrı tutmak daha temiz olur.
 
-### 11. `src/types/database.ts` otomatik üretilir
+### 12. `src/types/database.ts` otomatik üretilir
 Şema değişince yenilenmeli: `generate_typescript_types` (Supabase MCP) veya
 `supabase gen types typescript --project-id ryuguxxnmccybquqigji`.
 Üreteç CHECK constraint'lerini ifade edemez (`conflict_type: string` gelir);
@@ -273,7 +280,6 @@ address_conflicts   → address_conflicts_audit_trigger
 
 | # | Sev | Sorun |
 |---|---|---|
-| 1 | 🟢 | Uygulama ikonu yok |
 | 2 | 🔴 | **Auth yok** — anon key installer bundle'ında, anon `products`/`address_records`/`product_barcodes`'a yazabiliyor. Tek kullanıcı/tek makine olduğu için bilinçli ertelendi; ikinci makine çıkarsa öne alınmalı |
 | 3 | 🟢 | ESLint yok. Test (vitest) ve CI var |
 | 4 | 🟡 | Barkod okuyucu akışı yok (kullanıcı şimdilik istemiyor — kâğıtla çalışılıyor) |

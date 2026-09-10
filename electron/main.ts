@@ -11,6 +11,11 @@ const createWindow = (): void => {
     minWidth: 900,
     minHeight: 620,
     backgroundColor: '#f5f7f8',
+    // Paketlenmiş uygulamada pencere ikonu exe'den gelir (electron-builder
+    // build/icon.ico'yu gömer). Geliştirmede exe yok, o yüzden ikon burada
+    // veriliyor — yoksa `npm run dev` varsayılan Electron ikonuyla açılır.
+    // build/ üretim paketine dahil edilmediği için yol yalnızca dev'de geçerli.
+    ...(isDev ? { icon: path.join(__dirname, '../build/icon.png') } : {}),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
