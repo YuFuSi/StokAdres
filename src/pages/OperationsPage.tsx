@@ -135,7 +135,7 @@ const FINDER_DEBOUNCE_MS = 250
  * arama 0,6–1,6 sn, adresler ~0,3 sn — sürenin büyük kısmı ağ gecikmesi.
  *
  * `search_products` stok kodu, stok adı, barkod VE aktif adres arıyor
- * (20260910223000). Adres yazıldığında o raftaki ürünler dönüyor — ters arama
+ * (20260910192933). Adres yazıldığında o raftaki ürünler dönüyor — ters arama
  * ayrı bir ekran değil, aynı kutunun içinde.
  */
 function Finder() {

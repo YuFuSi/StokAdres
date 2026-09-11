@@ -46,8 +46,8 @@ export function App() {
     <AppLayout activePage={activePage} onNavigate={navigate} onProductSelect={openProduct}>
       {activePage === 'dashboard' && <DashboardPage onNavigate={navigate} onOpenStocks={openStocksWithFilter} />}
       {activePage === 'stocks' && selectedProductId && <ProductDetailPage productId={selectedProductId} onBack={() => setSelectedProductId(null)} onAddressSelect={(recordId) => { setSelectedProductId(null); setSelectedAddressId(recordId); setActivePage('addresses') }} />}
-      {activePage === 'stocks' && !selectedProductId && <StocksPage onBackToDashboard={() => navigate('dashboard')} onProductSelect={setSelectedProductId} initialFilter={stocksFilter} />}
-      {activePage === 'addresses' && <AddressesPage onBackToDashboard={() => setActivePage('dashboard')} initialSelectedRecordId={selectedAddressId} />}
+      {activePage === 'stocks' && !selectedProductId && <StocksPage onProductSelect={setSelectedProductId} initialFilter={stocksFilter} />}
+      {activePage === 'addresses' && <AddressesPage initialSelectedRecordId={selectedAddressId} />}
       {activePage === 'find' && <OperationsPage page="find" />}
       {activePage === 'caba' && <CabaLookupPage />}
       {activePage === 'import' && <ImportPage />}

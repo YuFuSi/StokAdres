@@ -88,7 +88,6 @@ export function ProductDetailPage({ productId, onBack, onAddressSelect }: Produc
   }, [onBack])
 
   const metrics = product ? getProductMetrics(product, records) : null
-  const activeRecords = records.filter((record) => record.isActive)
   const hasProductChanges = product !== null && (
     stockCode !== product.stockCode || stockName !== product.stockName
   )

@@ -3,10 +3,9 @@ import type {
   CreateAddressRecordInput,
   UpdateAddressRecordInput,
 } from '../types/addressRecord'
-import type { Product } from '../types/product'
 import { supabase } from '../lib/supabase'
 import { fetchAllRows } from '../lib/pagination'
-import { createProduct, DuplicateProductStockCodeError, getProductByStockCode, listProducts, rollbackCreatedProduct } from './productService'
+import { createProduct, DuplicateProductStockCodeError, getProductByStockCode, rollbackCreatedProduct } from './productService'
 
 type ProductRelation = {
   stock_code: string
@@ -191,13 +190,8 @@ export class AddressRecordService {
   }
 
   /**
-   * Genel Bakış'taki "son eklenenler" listesi için yalnızca son N kaydı çeker.
-   * Eskiden bu, list() ile tüm tabloyu çekip istemcide sıralayarak yapılıyordu;
-   * 100k ölçeğinde beş satır göstermek için tüm tabloyu indirmek anlamsız.
-   */
-  /**
    * Adresler ekranının veri kaynağı: arama, filtre, sıralama ve sayfalama
-   * sunucuda (`search_address_records`, 20260910233000).
+   * sunucuda (`search_address_records`, 20260910193945).
    *
    * Bu ekran eskiden list() ile tüm tabloyu çekip hepsini istemcide yapıyordu.
    * 2.818 kayıtta çalışıyordu ama adresleme sürüyor (günde ~2.700 kayıt) ve
@@ -253,6 +247,11 @@ export class AddressRecordService {
     }
   }
 
+  /**
+   * Genel Bakış'taki "son eklenenler" listesi için yalnızca son N kaydı çeker.
+   * Eskiden bu, list() ile tüm tabloyu çekip istemcide sıralayarak yapılıyordu;
+   * 100k ölçeğinde beş satır göstermek için tüm tabloyu indirmek anlamsız.
+   */
   async listRecent(limit: number): Promise<AddressRecord[]> {
     const { data, error } = await supabase
       .from('address_records')
@@ -262,10 +261,6 @@ export class AddressRecordService {
       .limit(limit)
     if (error) throw error
     return (data ?? []).map((record) => this.mapRecord(record as unknown as AddressRecordRow))
-  }
-
-  async listProducts(): Promise<Product[]> {
-    return listProducts()
   }
 
   /**

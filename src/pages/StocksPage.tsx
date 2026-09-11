@@ -16,7 +16,6 @@ import { rowNavigationProps } from '../lib/rowNavigation'
 import './StocksPage.css'
 
 type StocksPageProps = {
-  onBackToDashboard: () => void
   onProductSelect: (productId: string) => void
   /** Genel Bakış'tan gelindiginde onceden secili filtre. */
   initialFilter?: ProductListFilter
@@ -24,7 +23,7 @@ type StocksPageProps = {
 
 const SEARCH_DEBOUNCE_MS = 250
 
-export function StocksPage({ onBackToDashboard, onProductSelect, initialFilter = 'all' }: StocksPageProps) {
+export function StocksPage({ onProductSelect, initialFilter = 'all' }: StocksPageProps) {
   const [products, setProducts] = useState<ProductListItem[]>([])
   const [total, setTotal] = useState(0)
   const [counts, setCounts] = useState({ all: 0, none: 0, single: 0, multiple: 0 })

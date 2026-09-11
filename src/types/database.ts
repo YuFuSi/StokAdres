@@ -14,8 +14,8 @@
 // 20260910131409/131448: product_filter_counts view'i ve search_products
 // fonksiyonu eklendi; products_with_metrics'e stock_code_normalized geldi.
 //
-// 20260910213000: product_filter_counts'a no_address kolonu.
-// 20260910233000: address_record_counts view'i ve search_address_records
+// 20260910191458: product_filter_counts'a no_address kolonu.
+// 20260910193945: address_record_counts view'i ve search_address_records
 // fonksiyonu (Adresler ekraninin sunucu tarafi sorgusu).
 
 export type Json =

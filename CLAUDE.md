@@ -46,18 +46,24 @@ npm run build:win  # build + electron-builder --win nsis → release/
 ## Mimari Haritası
 
 ```
-electron/main.ts          BrowserWindow + 2 IPC handler (save-csv, save-file)
+electron/main.ts          BrowserWindow + 4 IPC (save-csv, save-file, save-backup, open-backup-folder)
 electron/preload.ts       contextBridge → window.electronAPI
 src/App.tsx               Router YOK — state tabanlı ekran switch'i
-src/layouts/AppLayout     Sidebar (9 link) + Ctrl+K komut paleti + bağlantı göstergesi
+src/layouts/AppLayout     Sidebar (9 link) + Ctrl+K paleti (sunucu araması) + bağlantı göstergesi
 src/lib/supabase.ts       createClient<Database> (tipli)
 src/lib/pagination.ts     fetchAllRows() — PostgREST 1000 satır sınırını aşar
+src/lib/addressFormat.ts  SAF · adres biçimi: parse, normalize (h21-1 → H21-01), rota sırası
+src/lib/pickList.ts       SAF · CABA sonucu → koridor gruplu toplama listesi
+src/lib/stockCodeVariants.ts  SAF · Gemini okuma hataları için stok kodu adayları
+src/lib/rowNavigation.ts  Tablo satırlarında ↑/↓/Enter
+src/lib/*.test.ts         Saf modül testleri (.env gerektirmez, Tuzak #11)
 src/pages/                9 sayfa
 src/services/             Veri erişim katmanı (UI supabase'i doğrudan import etmez)
+src/services/backupService.ts  Tek tıkla tam yedek → Belgeler\StokAdres Yedekleri
 src/services/*.test.ts    Vitest testleri
 src/data/localData.ts     addressRecordService singleton'ı burada
-scripts/bulk-load-products.mjs  Toplu ürün yükleme (README yanında)
-supabase/migrations/      17 dosya
+scripts/bulk-load-products.mjs  Toplu ürün yükleme + yedekten kurtarma (README yanında)
+supabase/migrations/      19 dosya — adları schema_migrations ile birebir (Tuzak #14)
 .github/workflows/ci.yml  typecheck + test + build
 ```
 
@@ -72,12 +78,12 @@ sunucu tarafına taşındığında ekranlar hiç değişmedi.
 | Ürün Detayı | `stocks` + seçim | 🟢 Tam CRUD |
 | Adresler | `addresses` | 🟢 **Sunucu tarafı** arama + filtre + sıralama + sayfalama |
 | İşlem Geçmişi | `audit` | 🟢 Çalışıyor |
-| **CABA Listesi** | `caba` | 🟢 **Yeni** — fiş yapıştır → adresleri bul (salt okuma) |
-| **İçe Aktar** | `import` | 🟢 **Yeniden yazıldı** — önizleme + satır bazlı düzeltme + toplu yazma |
-| Genel Bakış | `dashboard` | 🟢 `dashboard_summary` tek sorgu; metrikler filtreli listeye tıklanabilir |
-| Adres Bul | `find` | 🟢 Sunucu tarafı arama; stok kodu / ad / barkod **ve adres** (ters arama) |
+| **CABA Listesi** | `caba` | 🟢 Fiş yapıştır → adresler **depo rotasına göre** (koridor → raf → kat), koridor gruplu, yazdırılabilir (salt okuma) |
+| **İçe Aktar** | `import` | 🟢 Önizleme + satır içi düzeltme + toplu yazma · adres biçimi düzeltme · "bunu mu demek istediniz?" |
+| Genel Bakış | `dashboard` | 🟢 `dashboard_summary` + sayım ilerlemesi (koridorlar, son 14 gün) + yedek hatırlatıcı |
+| Adres Bul | `find` | 🟢 Sunucu tarafı arama; stok kodu / ad / barkod **ve adres** (ters arama) · son aramalar |
 | Dışa Aktar | `export` | 🟢 Her küme yalnızca ihtiyacını çekiyor; ilerleme gösteriliyor |
-| Ayarlar | `settings` | 🔴 Sadece tema butonu (artık kalıcı) |
+| Ayarlar | `settings` | 🟢 Tema (3 durum) · bağlantı teşhisi · sürüm · **Yedek Al** |
 
 ---
 
@@ -91,6 +97,11 @@ değildi. Git geçmişinde duruyorlar; ihtiyaç olursa oradan bakılır.
 
 `AddressRecordService.replaceAll` / `.clear` de silindi — yıkıcı RPC'leri
 çağırıyorlardı, yetkileri Sprint 0.1'de geri alınmıştı.
+
+Faz 10.2'de de silindi: `productSearch.ts` (istemci tarafı arama; Ctrl+K sunucuya
+taşınınca son kullanıcısı gitti), `productListing.filterAndSortProducts`,
+`addressRecordService.listProducts`. `tsconfig`'te artık `noUnusedLocals` ve
+`noUnusedParameters` açık — kullanılmayan kod derlemeyi kırar.
 
 ### 2. Çakışma sistemi istemciden kaldırıldı (bilinçli karar)
 `address_conflicts` **tablosu ve migration'ları DB'de duruyor** (0 satır), ama
@@ -120,7 +131,7 @@ belleğe alır. **Yeni kodda kullanma.** Bunun yerine:
 kalıyor — orada zaten hepsi gerekiyor ve ilerleme gösteriliyor.
 
 `search_products` stok kodu, stok adı, barkod **ve aktif adres** arıyor
-(20260910223000). Adres yazınca o raftaki ürünler dönüyor — ters arama ayrı bir
+(20260910192933). Adres yazınca o raftaki ürünler dönüyor — ters arama ayrı bir
 ekran değil, aynı kutunun içinde.
 
 ### 5. 🔴 Türkçe locale — normalize ederken `tr-TR` KULLANMA
@@ -133,7 +144,9 @@ Bu değer **hiçbir zaman eşleşmez ve hata da vermez** — sonuç sessizce
   Kanonik uygulama: [productLookup.ts](src/services/productLookup.ts)
   `normalizeStockCode` / `normalizeAddress`.
 - **Yalnızca istemci içi görüntüleme/sıralama/filtreleme** → `tr-TR` uygun
-  (`productSearch.ts`, tablo sıralamaları böyle).
+  (`recentSearches.ts`, tablo sıralamaları böyle).
+- Adres biçimi (`addressFormat.ts`) de DB'ye yazılan değeri ürettiği için düz
+  `toUpperCase()` kullanır; koridor harfinde `İ/ı/i → I` ayrıca çevrilir.
 
 ### 6. Yazma yollarında gerçek transaction yok — telafi deseni kullanılıyor
 Bu ölçek ve tek kullanıcı için bilinçli tercih; RPC'ye taşımak gerekmiyor.
@@ -196,34 +209,71 @@ Supabase import eden modüllerden ayrı tutmak daha temiz olur.
 `supabase gen types typescript --project-id ryuguxxnmccybquqigji`.
 Üreteç CHECK constraint'lerini ifade edemez (`conflict_type: string` gelir);
 daraltma mapping fonksiyonlarında yapılır. Varsayılansız fonksiyon
-parametrelerini de NOT NULL üretir — `conflictService`'te dar cast'ler bu yüzden.
+parametrelerini de NOT NULL üretir. `suggest_stock_codes` ile iki dashboard
+view'ının tipleri (Faz 6/8) üreteç biçiminde elle eklendi; bir sonraki yeniden
+üretimde aynı çıkmalı.
+
+### 13. Adres biçimi: yazma yollarında `toStoredAddress()`
+Depo adresi `<koridor harfi><2 haneli raf>-<2 haneli kat | DİBİ>` (F13-01).
+Canlıda 2.818 adresin 2.790'ı bu biçimde. Biçim dışı 2 kayıt var (`H21-1`,
+`H34-1`, elle girilmiş); **bilerek elle değiştirilmedi**, Adresler ekranından
+düzeltilebilir.
+- Adres yazan her yol (İçe Aktar, Adresler formu, Ürün Detayı formu) kanonik
+  değeri yazar: [addressFormat.ts](src/lib/addressFormat.ts) `toStoredAddress`.
+- **Biçim dışı adres engellenmez**, olduğu gibi yazılır ve uyarılır — depoda
+  bilinmeyen gerçek bir adres tipi olabilir.
+- İçe Aktar'da hücrede kullanıcının yazdığı durur; yazılacak değer
+  `PreviewRow.writeAddress`'te. Normalize edilmiş değeri hücreye geri yazma:
+  600 ms'lik yeniden kontrol, kullanıcı "H21-10" yazarken "H21-1"de durduğu an
+  değeri "H21-01"e çevirip elinden alır.
+
+### 14. MCP `apply_migration` kendi versiyonunu atar
+Dosyayı önceden bir zaman damgasıyla adlandırıp MCP ile uygularsan
+`schema_migrations`'taki versiyon farklı olur. Uyguladıktan sonra
+`list_migrations` ile versiyonu al, dosyayı **o** adla yaz. Bu drift iki kez
+yaşandı (PR #2 ve Faz 3–4'ün 4 migration'ı; `f394d39`'da düzeltildi).
+
+### 15. `pg_trgm` parametresi fonksiyona SET edilemiyor (42501)
+`create function ... set pg_trgm.similarity_threshold = 0.4` "permission denied
+to set parameter" verir: parametre, pg_trgm o oturumda yüklenene kadar
+tanımsız. Migration'ın başına `select public.show_limit();` koymak yeterli
+(20260911081023). Eşik önemli: varsayılan 0,3 ile 7 kod 347 ms, 0,4 ile 5 kod
+76 ms (GIN index 10 kat fazla aday döndürüyor).
 
 ---
 
 ## Canlı Database Şeması
 
-Şema `supabase/migrations/` içinde **tam olarak** mevcut ve 13 migration'ın
-tamamı canlıya uygulanmış (`schema_migrations` 13 satır, versiyonlar dosya
-adlarıyla birebir eşleşiyor).
+Şema `supabase/migrations/` içinde **tam olarak** mevcut ve 19 migration'ın
+tamamı canlıya uygulanmış (`schema_migrations` 19 satır, versiyonlar dosya
+adlarıyla birebir eşleşiyor — 2026-09-11 `list_migrations` ile doğrulandı).
+
+**Plan: Supabase FREE** (2026-09-11, `get_organization`). Otomatik yedek yok,
+7 gün kullanılmayan proje durdurulur, veritabanı sınırı 500 MB. Toplam boyut
+187 MB; bunun 89 MB'ı `audit_logs`.
 
 ### Tablolar
-Satır sayıları 2026-09-10 anlıkdır; yapı sabittir.
+Satır sayıları 2026-09-11 anlıkdır; yapı sabittir.
 
 | Tablo | Satır | RLS | Not |
 |---|---|---|---|
-| `products` | **~94.894** | ✅ | `stock_code` UNIQUE (ham) · `stock_code_normalized` generated |
-| `product_barcodes` | ~20 | ✅ | `barcode` UNIQUE (`lower(trim())`) |
-| `address_records` | ~119 | ✅ | `carton_count >= 0` CHECK |
+| `products` | **94.900** | ✅ | `stock_code` UNIQUE (ham) · `stock_code_normalized` generated |
+| `product_barcodes` | 101.987 | ✅ | `barcode` UNIQUE (`lower(trim())`) |
+| `address_records` | 2.818 | ✅ | `carton_count >= 0` CHECK |
 | `address_conflicts` | 0 | ✅ | SELECT-only, yazma RPC ile |
-| `audit_logs` | ~1.8k+ | ✅ | SELECT-only, yazma trigger ile |
+| `audit_logs` | ~200k | ✅ | SELECT-only, yazma trigger ile · DB'nin yarısı |
 
-### View'ler ve arama fonksiyonu (2026-09-10, ölçek çalışması)
+### View'ler ve fonksiyonlar
 | Nesne | İşlevi |
 |---|---|
 | `products_with_metrics` | Ürün + adres/koli sayıları, `stock_code_normalized` — DB'de hesaplanır |
 | `dashboard_summary` | Dashboard'un 4 metriği tek satırda |
 | `product_filter_counts` | Filtre çiplerinin 3 sayısı tek satırda |
-| `search_products(text,text,text,int,int)` | Sunucu tarafı arama (pg_trgm 1.6), toplam sayıyı da döndürür |
+| `search_products(text,text,text,int,int)` | Sunucu tarafı arama (pg_trgm 1.6), toplam sayıyı da döndürür; stok kodu/ad/barkod/aktif adres |
+| `address_record_counts` · `search_address_records(...)` | Adresler ekranının filtre çipleri ve sunucu tarafı listesi |
+| `suggest_stock_codes(text[],int)` | İçe Aktar "bunu mu demek istediniz?" — trigram benzerliği, eşik 0,4 (Tuzak #15) |
+| `address_aisle_summary` | Genel Bakış: koridor başına aktif konum/ürün/koli (yalnızca `A99-` biçimi) |
+| `address_daily_activity` | Genel Bakış: gün başına eklenen adres, son 31 gün, Europe/Istanbul |
 
 ### Kritik index'ler
 ```sql
@@ -237,6 +287,7 @@ idx_products_stock_code_trgm              GIN (stock_code gin_trgm_ops)
 idx_products_stock_name_trgm              GIN (stock_name gin_trgm_ops)
 idx_product_barcodes_barcode_trgm         GIN (barcode gin_trgm_ops)
 idx_products_stock_code_normalized        btree (lower(trim(stock_code)))
+-- address_records.address üzerinde GIN trigram (ters arama, 20260910192933)
 ```
 
 ### FK davranışları
@@ -264,6 +315,7 @@ engellenir.
 | `create_address_conflict` / `resolve_address_conflict` | ❌ (Faz 3.2) |
 | trigger fonksiyonları (4 adet) | ❌ (Faz 3.2) |
 | `search_products` | ✅ SECURITY INVOKER, tasarım gereği |
+| `search_address_records` · `suggest_stock_codes` | ✅ SECURITY INVOKER, salt okuma |
 | `audit_operation_id` / `set_updated_at` | ✅ zararsız, `search_path` sabitlendi (3.2) |
 
 ### Trigger'lar
@@ -285,8 +337,9 @@ address_conflicts   → address_conflicts_audit_trigger
 | 4 | 🟡 | Barkod okuyucu akışı yok (kullanıcı şimdilik istemiyor — kâğıtla çalışılıyor) |
 | 5 | 🟡 | `as unknown as` cast'leri — iç içe ilişki/view seçimlerinde nullable uyumsuzluğu |
 | 6 | 🟡 | `pg_trgm` public şemada (Supabase linter). Taşımak 95k satırda GIN index'leri yeniden kurmayı gerektirir; bilinçli bırakıldı |
-| 7 | 🟢 | Installer imzasız, uygulama ikonu yok (Faz 3.8 — ikon dosyası kullanıcıdan bekleniyor) |
-| 8 | 🟢 | ESLint yok. Test (vitest) ve CI **var** |
+| 7 | 🟢 | Installer imzasız (ikon eklendi, `680c0fd`) |
+| 8 | 🟡 | **Supabase FREE plan** — otomatik yedek yok, 7 günde durdurma. Faz 7'nin yedeği ve hatırlatıcısı riski azaltıyor, kaldırmıyor; kalıcı çözüm Pro ($25/ay), kullanıcının kararı |
+| 9 | 🟡 | Tokyo bölgesi: her istek ~300 ms taban gecikme, yedek 219 sn sürüyor. Faz 9'da Frankfurt'a taşıma planlandı |
 
 ---
 
@@ -694,3 +747,73 @@ parlaklıkla hesaplandı.
 **Kalan (istenirse):** Adres Bul / Ayarlar / Dışa Aktar ekranlarının alt yarısı
 boş — dürüst bir içerik olmadan doldurmanın anlamı yok, bilerek bırakıldı.
 Tablo satırları hâlâ klavyeyle gezilemiyor (`<tr onClick>`).
+*(İkisi de 2026-09-11'de kapandı: Adres Bul ve Ayarlar gerçek içerikle doldu,
+satırlar ↑/↓/Enter ile geziliyor. Dışa Aktar bilerek aynı kaldı.)*
+
+## 2026-09-11 — Faz 5–8 ve temizlik (10.1–10.2)
+Branch `feat/faz-5-10`. Kullanıcı sordu: *"daha iyi görünmesi, daha işlevsel
+olması için ne yapabiliriz?"* Dört önceliğin hepsi seçildi; üstüne ölü kod
+temizliği ve en son .exe. Kararlar: CABA çıktısı **adrese göre**; sunucu
+**Frankfurt'a taşınacak** (Faz 9, bekliyor).
+
+**Planı belirleyen, canlıdan doğrulanan bulgular:**
+- Ctrl+K paleti açılışta hâlâ `listProducts()` + tüm adresleri çekiyordu (~95 istek).
+- Adresler çok düzenli: F, G, H, I, J, K, N, O koridorları; raf 01–37; kat 01–04 + DİBİ.
+- Supabase planı FREE (bkz. Açık Sorun #8).
+
+### Faz 5 — Günlük iş (`60a1c86`)
+- Ctrl+K sunucu aramasına taşındı. Ölçüldü: açılış **0 istek**, yazınca 2.
+- CABA listesi rota sırasında ve koridor gruplu; çok konumlu ürün her konumda
+  ayrı satır ("15 konumda"). Kâğıtta işaretleme kutusu, `@page` ile "Sayfa X / Y".
+  Gerçek kodlarla doğrulandı: F14-DİBİ → F15-02 → G27-04 … O37-03, 6 koridor.
+- Ctrl+Enter (CABA, İçe Aktar) · Ctrl+P (CABA sonucu; üretimde menü kaldırıldığı
+  için Electron bu kısayolu kendiliğinden yakalamıyor).
+- Stoklar ve Adresler: ↑/↓/Enter (`rowNavigationProps`).
+- CABA CSS'indeki 2 sabit hex token'a bağlandı.
+
+### Faz 6 — Hataları yakala (`60a1c86`)
+- Adres biçimi (Tuzak #13). Önizlemede doğrulandı: `h21-1` → H21-01,
+  `f14 dibi` → F14-DİBİ, `rampa önü` uyarılı ama engellenmemiş.
+- "Bunu mu demek istediniz?": önce deterministik varyantlar
+  (`stockCodeVariants.ts`), bulunamazsa `suggest_stock_codes`. Doğrulandı:
+  `TEKSI0465` → tek kesin öneri TEKS10465; "Önerileri uygula" sonrası satır
+  "Yazılacak" oldu. `ZÜCC8619` → 3 benzer öneri. Öneriler asla kendiliğinden
+  yazılmıyor.
+- İlk migration denemesi 42501 ile reddedildi (Tuzak #15); hiçbir şey uygulanmadı.
+
+### Faz 7 — Veriyi güvenceye al (`3edd6d3`)
+- Ayarlar > **Yedek Al** → `Belgeler\StokAdres Yedekleri\StokAdres_yedek_<tarih>.xlsx`.
+  Yeni IPC `save-backup` (dosya adı main process'te regex ile denetleniyor) ve
+  `open-backup-folder`. IPC taklidiyle tarayıcıda ölçüldü: 94.900 / 101.987 /
+  2.818 satır DB ile birebir, **219 sn** (Tokyo), 32,9 MB. Gerçek Electron IPC'si
+  exe smoke testinde (10.3) doğrulanacak.
+- Genel Bakış hatırlatıcısı (7 gün). Kenar çubuğu artık "İnternet yok" ile
+  "Veritabanına ulaşılamıyor"u ayırıyor (ikincisinde durdurulmuş proje ipucu).
+- Kurtarma prosedürü `scripts/README.md`'de; tatbikatla denenmedi, orada da yazıyor.
+
+### Faz 8 — Görünüm (`3edd6d3`)
+- Genel Bakış: sayım ilerlemesi (1.873 / 94.900 · %2), koridor çubukları, son
+  14 gün. View'ler 20260911081956; toplamlar SQL ile doğrulandı (2.818).
+- Adres Bul boş ekranında son aramalar.
+- **Ölçüm:** `--muted` açık temada sayfa zemininde 4,48:1'di → `#646e6d`, 4,81.
+  Yeni renk çiftlerinin hepsi iki temada da ≥4,5.
+- **Plandan sapmalar:** Koridor çubuğuna tıklayıp arama eklenmedi — ters arama
+  `ilike '%F%'` olduğu için "F" stok adlarında da eşleşir; tıklanabilir görünüp
+  yanlış sonuç vermek kötü olurdu. CABA ekranına yapışkan koridor başlığı da
+  eklenmedi (`.caba-table { overflow: hidden }` sticky'yi bozuyor).
+
+### Faz 10.1–10.2 — Temizlik
+- 4 migration dosya adı canlı versiyonlarla eşleştirildi (`f394d39`).
+- Silinenler Tuzak #1'de. `tsconfig`'e `noUnusedLocals` / `noUnusedParameters`.
+- 🔴→✅ **Gerçek hata bulundu:** Adresler > Düzenle, ürün seçici boş ve kilitli
+  açılıyor, Kaydet "Ürün ... girin" doğrulamasına takılıyordu — Adresler
+  ekranından düzenleme hiç çalışmıyordu. Sebep: iki yol da okunmayan bir
+  `selectedProductId` yazıyordu. "Adres Ekle" de seçili kaydın ürünüyle
+  başlamıyordu. İkisi düzeltildi; tarayıcıda kayıt yazmadan doğrulandı.
+- `package-lock.json`'daki yerel fark yalnızca npm sürüm farkından gelen `peer`
+  işaretleriydi; geri alındı.
+
+**Doğrulama:** typecheck (noUnused dahil) PASS · 52 test PASS · build PASS.
+
+**Bekleyen:** Faz 9 (Frankfurt taşıma — kullanıcı onayı ve kullanıcının kendi
+terminalinde DB şifresi gerekiyor) · 10.3 (sürüm 1.1.0 + exe).
