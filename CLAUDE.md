@@ -985,3 +985,14 @@ göre düzen.
 
 **Açık:** Stok adlarının 331'inde satır sonu var (Tuzak #16); çıktıda iki satıra
 bölünmüş ad olarak görünür. Temizlik kullanıcının kararı.
+
+**Kurulum dosyası:** `release/StokAdres Setup 1.2.0.exe`. İlk build EBUSY ile
+düştü: kullanıcı `release\win-unpacked\StokAdres.exe`'yi Harun abiye göstermek
+için açık bırakmıştı (`app.asar` kilitli). Süreç kapatılmadan build
+başlatılmadı; kullanıcı kapattı. **Build öncesi `release\win-unpacked`'ten
+çalışan bir StokAdres olmadığını kontrol et.**
+Paketlenmiş 1.2.0 smoke testi: konsol hatası 0, CSP ihlali 0, istekler yalnızca
+Frankfurt, "Sürüm 1.2.0", gerçek CSV yedeği 45 sn
+(`StokAdres_yedek_2026-09-11_1645`, 4 dosya), Çıktı Al CABA fişi ürüne göre,
+N koridoru aralığı 68 konum rafa göre, Adresler yerinde düzenleme açılıp Esc
+ile değişmeden kapandı.
