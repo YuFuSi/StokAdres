@@ -815,5 +815,25 @@ temizliği ve en son .exe. Kararlar: CABA çıktısı **adrese göre**; sunucu
 
 **Doğrulama:** typecheck (noUnused dahil) PASS · 52 test PASS · build PASS.
 
+### Güvenlik gerilemesi (20260911085611)
+`get_advisors` taşıma öncesi taramada **2 × ERROR security_definer_view** buldu:
+`product_filter_counts` ve `address_record_counts`, Faz 3–4 migration'larında
+`security_invoker` olmadan yeniden kurulmuştu (Faz 3.2'de bulgular 13 → 1'e
+inmişti). anon SELECT politikaları `using (true)` olduğu için davranış
+değişmeden `security_invoker = true` yapıldı. Doğrulandı: advisor 3 → 1
+(yalnızca bilerek bırakılan `pg_trgm`), uygulamadaki sayaçlar aynı
+(94.900 / 93.027 / 1.362 / 511 · 2.818).
+**Yeni view yazarken `with (security_invoker = true)` unutma** — `create or
+replace view` bu seçeneği korumaz, yeniden belirtmek gerekir.
+
+### Faz 9 — Frankfurt taşıma (engellendi)
+- Taşıma öncesi ölçüm (Tokyo, Adres Bul, 6 sorgu): `search_products` medyan
+  **1.009 ms**, adres sorgusu 417 ms, ekrana gelme 1,1–2,6 sn.
+- Maliyet 0 $/ay onaylandı; `create_project` reddedildi: hesap sahibinin
+  **ücretsiz aktif proje sınırı (2) dolu** — ikinci aktif proje bu MCP'nin
+  göremediği başka bir organizasyonda. Karar kullanıcıda.
+- Yerelde `pg_dump` / `psql` / Supabase CLI / Docker yok. winget paketi:
+  `PostgreSQL.PostgreSQL.17` (17.11).
+
 **Bekleyen:** Faz 9 (Frankfurt taşıma — kullanıcı onayı ve kullanıcının kendi
 terminalinde DB şifresi gerekiyor) · 10.3 (sürüm 1.1.0 + exe).
