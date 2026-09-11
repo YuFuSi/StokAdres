@@ -177,6 +177,20 @@ ikonları PNG kabul etmiyor ("invalid icon file" ile derleme durur).
 Script 16–256 arası 7 boyutu 32-bit BGRA DIB girdisi olarak yazar (PNG girdisi
 değil — NSIS'in eski ikon okuyucusu için).
 
+### 8b. `build:win` EPERM ile düşüyorsa: Windows Defender
+electron-builder Electron zip'ini `release/win-unpacked.tmp`'ye çıkarıp
+`win-unpacked`'e yeniden adlandırıyor. Defender gerçek zamanlı koruması yeni
+çıkarılmış `electron.exe`'yi tararken klasörü tutuyor → `EPERM: operation not
+permitted, rename`. 2026-09-11'de iki denemede de tekrarlandı; normal klasör
+yeniden adlandırma çalışıyordu.
+Çözüm `package.json` → `build.electronDist: "node_modules/electron/dist"`:
+`npm install`'un zaten indirdiği aynı sürüm Electron kullanılıyor, çıkarma ve
+yeniden adlandırma adımı hiç çalışmıyor. Defender'ı kapatma / istisna ekleme
+YOLUNA GİTME. ⚠️ `electron` paketinin sürümü değişirse bu klasör de onunla gelir.
+
+Yan not: `npm run build:win 2>&1 | tail` gibi boru hattında çıkış kodu `tail`'in
+kodudur; build düşse de "exit 0" görünür. `set -o pipefail` kullan.
+
 ### 9. `dist-electron/` git'te takipli DEĞİL
 Ama `package.json` `main` alanı oraya bakıyor. Build çıktısı, her build'de
 yeniden üretiliyor.

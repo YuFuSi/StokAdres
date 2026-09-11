@@ -39,6 +39,7 @@
   "build": {
     "appId": "com.stokadres.app",
     "productName": "StokAdres",
+    "electronDist": "node_modules/electron/dist",
     "directories": {
       "output": "release"
     },
