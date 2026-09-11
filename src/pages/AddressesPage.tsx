@@ -1,21 +1,26 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { ChevronLeft, ChevronRight, MapPin, Plus, Search } from 'lucide-react'
 import { addressRecordService } from '../data/localData'
 import { ADDRESS_PAGE_SIZE, DuplicateActiveAddressError, type AddressRecordFilter, type AddressRecordSort } from '../services/addressRecordService'
 import { queryProducts, type ProductListItem } from '../services/productService'
 import type { AddressRecord } from '../types/addressRecord'
-import type { Product } from '../types/product'
 import { formatNumber } from '../lib/format'
+import { rowNavigationProps } from '../lib/rowNavigation'
+import { toStoredAddress } from '../lib/addressFormat'
+import { InlineEdit } from '../components/InlineEdit'
 import './AddressesPage.css'
 
 type AddressesPageProps = {
-  onBackToDashboard: () => void
   initialSelectedRecordId?: string | null
 }
 
 const SEARCH_DEBOUNCE_MS = 250
 
-export function AddressesPage({ onBackToDashboard, initialSelectedRecordId = null }: AddressesPageProps) {
+/** Form yalnızca bu üç alanı kullanıyor. Dar tip, hem seçicinin sonucundan
+ *  hem de mevcut bir adres kaydından doldurulabilsin diye. */
+type PickedProduct = Pick<ProductListItem, 'id' | 'stockCode' | 'stockName'>
+
+export function AddressesPage({ initialSelectedRecordId = null }: AddressesPageProps) {
   const [records, setRecords] = useState<AddressRecord[]>([])
   const [total, setTotal] = useState(0)
   const [counts, setCounts] = useState({ all: 0, active: 0, inactive: 0, activeCartons: 0 })
@@ -30,8 +35,7 @@ export function AddressesPage({ onBackToDashboard, initialSelectedRecordId = nul
   const [formError, setFormError] = useState('')
   const [isFormOpen, setIsFormOpen] = useState(false)
   const [editingRecordId, setEditingRecordId] = useState<string | null>(null)
-  const [selectedProductId, setSelectedProductId] = useState('')
-  const [selectedProduct, setSelectedProduct] = useState<ProductListItem | null>(null)
+  const [selectedProduct, setSelectedProduct] = useState<PickedProduct | null>(null)
   const [address, setAddress] = useState('')
   const [cartonCount, setCartonCount] = useState('')
   const [isActive, setIsActive] = useState(true)
@@ -105,7 +109,8 @@ export function AddressesPage({ onBackToDashboard, initialSelectedRecordId = nul
 
   const openCreateForm = () => {
     setEditingRecordId(null)
-    setSelectedProductId(selectedRecord?.productId ?? '')
+    // Bir kayıt seçiliyken "Adres Ekle" o kaydın ürünüyle başlar.
+    setSelectedProduct(selectedRecord ? { id: selectedRecord.productId, stockCode: selectedRecord.stockCode, stockName: selectedRecord.stockName } : null)
     setAddress('')
     setCartonCount('')
     setIsActive(true)
@@ -115,7 +120,10 @@ export function AddressesPage({ onBackToDashboard, initialSelectedRecordId = nul
 
   const openEditForm = (record: AddressRecord) => {
     setEditingRecordId(record.id)
-    setSelectedProductId(record.productId)
+    // Eskiden yalnızca kullanılmayan bir `selectedProductId` yazılıyordu; seçici
+    // boş ve kilitli açılıyor, Kaydet "Ürün ... girin" doğrulamasına takılıyordu
+    // — Adresler ekranından düzenleme hiç çalışmıyordu.
+    setSelectedProduct({ id: record.productId, stockCode: record.stockCode, stockName: record.stockName })
     setAddress(record.address)
     setCartonCount(String(record.cartonCount))
     setIsActive(record.isActive)
@@ -139,7 +147,7 @@ export function AddressesPage({ onBackToDashboard, initialSelectedRecordId = nul
           productId: product.id,
           stockCode: product.stockCode,
           stockName: product.stockName,
-          address: address.trim(),
+          address: toStoredAddress(address),
           cartonCount: parsedCartonCount,
           isActive,
         })
@@ -148,7 +156,7 @@ export function AddressesPage({ onBackToDashboard, initialSelectedRecordId = nul
           productId: product.id,
           stockCode: product.stockCode,
           stockName: product.stockName,
-          address: address.trim(),
+          address: toStoredAddress(address),
           cartonCount: parsedCartonCount,
           isActive,
         })
@@ -162,6 +170,24 @@ export function AddressesPage({ onBackToDashboard, initialSelectedRecordId = nul
         : 'Adres kaydı kaydedilemedi. Lütfen tekrar deneyin.')
     } finally {
       setIsSaving(false)
+    }
+  }
+
+  // Tablo hücresinden yerinde düzeltme. Liste yeniden çekilmiyor: satır yerinde
+  // güncelleniyor, böylece "Güncellenme tarihi" sıralamasında düzeltilen satır
+  // kullanıcının gözünün önünden kaybolmuyor. Özet sayaçları (aktif/pasif,
+  // toplam koli) değişebildiği için ayrıca tazeleniyor.
+  const saveInline = async (record: AddressRecord, changes: { address?: string; cartonCount?: number; isActive?: boolean }) => {
+    try {
+      const updated = await addressRecordService.update(record.id, changes)
+      setRecords((current) => current.map((item) => item.id === updated.id ? updated : item))
+      setSelectedRecord((current) => current?.id === updated.id ? updated : current)
+      void addressRecordService.getCounts().then(setCounts).catch((reason: unknown) => console.error(reason))
+    } catch (reason: unknown) {
+      console.error(reason)
+      throw new Error(reason instanceof DuplicateActiveAddressError
+        ? 'Bu ürünün bu adreste zaten aktif bir kaydı var.'
+        : 'Kaydedilemedi. Bağlantıyı kontrol edip tekrar deneyin.')
     }
   }
 
@@ -223,14 +249,28 @@ export function AddressesPage({ onBackToDashboard, initialSelectedRecordId = nul
       {!isLoading && !error && (
         <div className={`addresses-layout ${selectedRecord ? 'addresses-layout--detail-open' : ''}`}>
           <section className="addresses-table-panel" aria-label="Adres kayıtları">
-            <div className="addresses-table-caption"><span>{total === 0 ? '0 kayıt' : `${formatNumber(pageStart + 1)}-${formatNumber(pageStart + visibleRecords.length)} / ${formatNumber(total)} kayıt`}</span><span>Satıra tıklayarak ayrıntıyı açın</span></div>
+            <div className="addresses-table-caption"><span>{total === 0 ? '0 kayıt' : `${formatNumber(pageStart + 1)}-${formatNumber(pageStart + visibleRecords.length)} / ${formatNumber(total)} kayıt`}</span><span>Adres, koli veya durumu tıklayıp yerinde düzeltin · ayrıntı için satıra tıklayın</span></div>
             {total === 0 ? <p className="addresses-state">{counts.all === 0 ? 'Henüz adres kaydı bulunmuyor.' : 'Aramanızla eşleşen adres bulunamadı.'}</p> : (
               <>
               <div className="addresses-table-wrap">
                 <table className="addresses-table">
                   <thead><tr><th>Adres</th><th>Stok kodu</th><th>Stok adı</th><th>Koli</th><th>Durum</th><th>Güncellenme</th><th aria-label="Aksiyon" /></tr></thead>
-                  <tbody>{visibleRecords.map((record) => <tr className={selectedRecord?.id === record.id ? 'addresses-row addresses-row--selected' : 'addresses-row'} key={record.id} onClick={() => { setSelectedRecord(record); closeForm() }}>
-                    <td><span className="address-cell"><MapPin size={14}/>{record.address}</span></td><td><strong>{record.stockCode}</strong></td><td className="address-product-name">{record.stockName}</td><td><strong className="carton-cell">{formatNumber(record.cartonCount)}</strong></td><td><StatusBadge isActive={record.isActive} /></td><td>{formatDate(record.updatedAt)}</td><td><button className="row-open" type="button" tabIndex={-1} aria-label={`${record.address} ayrıntısını aç`} onClick={(event) => { event.stopPropagation(); setSelectedRecord(record); closeForm() }}><ChevronRight size={16}/></button></td>
+                  <tbody>{visibleRecords.map((record) => <tr className={selectedRecord?.id === record.id ? 'addresses-row addresses-row--selected' : 'addresses-row'} key={record.id} onClick={() => { setSelectedRecord(record); closeForm() }} {...rowNavigationProps(() => { setSelectedRecord(record); closeForm() })}>
+                    <td>
+                      <InlineEdit kind="text" label="Adres" value={record.address} inputClassName="inline-edit-input--address"
+                        display={<span className="address-cell"><MapPin size={14}/>{record.address}</span>}
+                        validate={(value) => value.trim() ? null : 'Adres boş olamaz.'}
+                        onCommit={(value) => saveInline(record, { address: toStoredAddress(value) })} />
+                    </td><td><strong>{record.stockCode}</strong></td><td className="address-product-name">{record.stockName}</td><td>
+                      <InlineEdit kind="number" label="Koli adedi" value={String(record.cartonCount)} inputClassName="inline-edit-input--number"
+                        display={<strong className="carton-cell">{formatNumber(record.cartonCount)}</strong>}
+                        validate={(value) => Number.isInteger(Number(value)) && Number(value) >= 1 ? null : 'Koli 1 veya daha büyük tam sayı olmalı.'}
+                        onCommit={(value) => saveInline(record, { cartonCount: Number(value) })} />
+                    </td><td>
+                      <InlineEdit kind="select" label="Durum" value={String(record.isActive)} options={[['true', 'Aktif'], ['false', 'Pasif']]}
+                        display={<StatusBadge isActive={record.isActive} />}
+                        onCommit={(value) => saveInline(record, { isActive: value === 'true' })} />
+                    </td><td>{formatDate(record.updatedAt)}</td><td><button className="row-open" type="button" tabIndex={-1} aria-label={`${record.address} ayrıntısını aç`} onClick={(event) => { event.stopPropagation(); setSelectedRecord(record); closeForm() }}><ChevronRight size={16}/></button></td>
                   </tr>)}</tbody>
                 </table>
               </div>
@@ -251,11 +291,11 @@ export function AddressesPage({ onBackToDashboard, initialSelectedRecordId = nul
             <div className="address-detail__meta"><span>Adres<strong>{selectedRecord.address}</strong></span><span>Koli<strong>{formatNumber(selectedRecord.cartonCount)}</strong></span><span>Durum<StatusBadge isActive={selectedRecord.isActive} /></span></div>
             <div className="address-detail__dates"><span>Oluşturulma<strong>{formatDate(selectedRecord.createdAt)}</strong></span><span>Güncellenme<strong>{formatDate(selectedRecord.updatedAt)}</strong></span></div>
             <div className="address-detail__actions"><button className="button button--secondary" type="button" onClick={() => openEditForm(selectedRecord)}>Düzenle</button><button className="button button--danger" type="button" onClick={() => deleteRecord(selectedRecord)}>Sil</button></div>
-            {isFormOpen && <AddressForm selectedProduct={selectedProduct} setSelectedProduct={setSelectedProduct} setSelectedProductId={setSelectedProductId} address={address} setAddress={setAddress} cartonCount={cartonCount} setCartonCount={setCartonCount} isActive={isActive} setIsActive={setIsActive} isEditing={Boolean(editingRecordId)} isSaving={isSaving} error={formError} onSubmit={saveRecord} onCancel={closeForm} />}
+            {isFormOpen && <AddressForm selectedProduct={selectedProduct} setSelectedProduct={setSelectedProduct} address={address} setAddress={setAddress} cartonCount={cartonCount} setCartonCount={setCartonCount} isActive={isActive} setIsActive={setIsActive} isEditing={Boolean(editingRecordId)} isSaving={isSaving} error={formError} onSubmit={saveRecord} onCancel={closeForm} />}
           </aside>}
         </div>
       )}
-      {isFormOpen && !selectedRecord && <AddressForm selectedProduct={selectedProduct} setSelectedProduct={setSelectedProduct} setSelectedProductId={setSelectedProductId} address={address} setAddress={setAddress} cartonCount={cartonCount} setCartonCount={setCartonCount} isActive={isActive} setIsActive={setIsActive} isEditing={Boolean(editingRecordId)} isSaving={isSaving} error={formError} onSubmit={saveRecord} onCancel={closeForm} />}
+      {isFormOpen && !selectedRecord && <AddressForm selectedProduct={selectedProduct} setSelectedProduct={setSelectedProduct} address={address} setAddress={setAddress} cartonCount={cartonCount} setCartonCount={setCartonCount} isActive={isActive} setIsActive={setIsActive} isEditing={Boolean(editingRecordId)} isSaving={isSaving} error={formError} onSubmit={saveRecord} onCancel={closeForm} />}
     </main>
   )
 }
@@ -269,9 +309,8 @@ function StatusBadge({ isActive }: { isActive: boolean }) {
 }
 
 type AddressFormProps = {
-  selectedProduct: ProductListItem | null
-  setSelectedProduct: (product: ProductListItem | null) => void
-  setSelectedProductId: (value: string) => void
+  selectedProduct: PickedProduct | null
+  setSelectedProduct: (product: PickedProduct | null) => void
   address: string
   setAddress: (value: string) => void
   cartonCount: string
@@ -290,10 +329,10 @@ function AddressForm(props: AddressFormProps) {
     <span className="selected-product__label">{props.isEditing ? 'Adres kaydını düzenle' : 'Yeni adres kaydı'}</span>
     <ProductPicker
       selected={props.selectedProduct}
-      onSelect={(product) => { props.setSelectedProduct(product); props.setSelectedProductId(product?.id ?? '') }}
+      onSelect={props.setSelectedProduct}
       disabled={props.isEditing}
     />
-    <label>Adres<input value={props.address} onChange={(event) => props.setAddress(event.target.value)} placeholder="Örn. A1-1" /></label>
+    <label>Adres<input value={props.address} onChange={(event) => props.setAddress(event.target.value)} placeholder="Örn. H21-01" /></label>
     <label>Koli adedi<input type="number" min="1" step="1" value={props.cartonCount} onChange={(event) => props.setCartonCount(event.target.value)} placeholder="Örn. 15" /></label>
     <label className="address-active-toggle"><input type="checkbox" checked={props.isActive} onChange={(event) => props.setIsActive(event.target.checked)} /> Aktif kayıt</label>
     {props.error && <p className="form-error" role="alert">{props.error}</p>}
@@ -310,19 +349,14 @@ function formatDate(value: string): string {
 }
 
 /**
- * Görünen adres kayıtlarının ürünlerine ait barkodlar. Yalnızca aramada
- * kullanılıyor. Tüm ürünleri çekmek yerine (94.894 üründe ~95 istek) sadece
- * listedeki ürünlerin barkodları alınıyor.
- */
-/**
  * Ürün seçici. Eskiden buradaki `<select>` tüm ürünleri `<option>` olarak
  * basıyordu; 94.894 üründe bu hem imkânsız hem de kullanılamaz (kimse o listeyi
  * kaydırmaz). Yerine yazdıkça arayan bir seçici: sunucu tarafı arama, ilk 8
  * sonuç.
  */
 function ProductPicker({ selected, onSelect, disabled }: {
-  selected: ProductListItem | null
-  onSelect: (product: ProductListItem | null) => void
+  selected: PickedProduct | null
+  onSelect: (product: PickedProduct | null) => void
   disabled?: boolean
 }) {
   const [term, setTerm] = useState('')

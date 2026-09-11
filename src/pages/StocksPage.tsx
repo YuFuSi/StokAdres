@@ -12,10 +12,10 @@ import {
   type ProductListSort,
 } from '../services/productService'
 import { formatNumber } from '../lib/format'
+import { rowNavigationProps } from '../lib/rowNavigation'
 import './StocksPage.css'
 
 type StocksPageProps = {
-  onBackToDashboard: () => void
   onProductSelect: (productId: string) => void
   /** Genel Bakış'tan gelindiginde onceden secili filtre. */
   initialFilter?: ProductListFilter
@@ -23,7 +23,7 @@ type StocksPageProps = {
 
 const SEARCH_DEBOUNCE_MS = 250
 
-export function StocksPage({ onBackToDashboard, onProductSelect, initialFilter = 'all' }: StocksPageProps) {
+export function StocksPage({ onProductSelect, initialFilter = 'all' }: StocksPageProps) {
   const [products, setProducts] = useState<ProductListItem[]>([])
   const [total, setTotal] = useState(0)
   const [counts, setCounts] = useState({ all: 0, none: 0, single: 0, multiple: 0 })
@@ -203,7 +203,7 @@ export function StocksPage({ onBackToDashboard, onProductSelect, initialFilter =
           <section className="stocks-table-panel" aria-label="Stok listesi">
             <div className="stocks-table-caption">
               <span>{formatNumber(total)} stok{total > 0 && <> · {formatNumber(rangeStart)}-{formatNumber(rangeEnd)} arası</>}</span>
-              <span>Satıra tıklayarak stok kartını açın</span>
+              <span>Satıra tıklayın ya da ↑↓ ile gezip Enter'a basın</span>
             </div>
             {isLoading && products.length === 0 ? <p className="stocks-state" role="status">Stoklar yükleniyor...</p>
               : total === 0 && debouncedQuery ? <p className="stocks-state">Aramanızla eşleşen stok bulunamadı.</p>
@@ -213,7 +213,7 @@ export function StocksPage({ onBackToDashboard, onProductSelect, initialFilter =
                   <table className="stocks-table">
                     <thead><tr><th>Stok kodu</th><th>Stok</th><th>Barkod</th><th>Adres</th><th>Koli</th><th aria-label="İşlemler" /></tr></thead>
                     <tbody>{products.map((product) => (
-                      <tr className="stocks-row" key={product.id} onClick={() => onProductSelect(product.id)}>
+                      <tr className="stocks-row" key={product.id} onClick={() => onProductSelect(product.id)} {...rowNavigationProps(() => onProductSelect(product.id))}>
                         <td><strong>{product.stockCode}</strong></td>
                         <td>{product.stockName}</td>
                         <td className="barcode-summary">{product.barcodes.length ? <><span>{product.barcodes[0]}</span>{product.barcodes.length > 1 && <small>+{product.barcodes.length - 1} barkod</small>}</> : <span>—</span>}</td>

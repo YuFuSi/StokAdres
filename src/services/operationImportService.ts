@@ -1,6 +1,6 @@
 import * as XLSX from 'xlsx'
 
-export type ImportOperation = 'stocks' | 'names' | 'barcodes' | 'addresses' | 'caba'
+export type ImportOperation = 'stocks' | 'names' | 'barcodes' | 'addresses'
 export type OperationImportRow = { rowNumber: number; stockCode: string; stockName: string; barcode: string; address: string; cartonCount: number | null; cabaQuantity: string }
 
 const aliases: Record<keyof Omit<OperationImportRow, 'rowNumber' | 'cartonCount'>, string[]> = {

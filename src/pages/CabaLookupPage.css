@@ -35,7 +35,7 @@
 .caba-summary > div:last-child { border-right: 0; }
 .caba-summary strong { display: block; font: 600 24px 'Space Grotesk', sans-serif; }
 .caba-summary span { display: block; margin-top: 3px; color: var(--muted); font-size: 11px; }
-.caba-summary__warn strong { color: #9b6e1c; }
+.caba-summary__warn strong { color: var(--warning); }
 
 .caba-note { margin: 14px 0 0; color: var(--muted); font-size: 12px; }
 
@@ -43,10 +43,14 @@
 .caba-table { width: 100%; border-collapse: collapse; background: var(--surface); border: 1px solid var(--line); border-radius: 6px; overflow: hidden; font-size: 13px; }
 .caba-table th { height: 40px; padding: 0 16px; color: var(--muted); background: var(--surface-muted); font-size: 10px; font-weight: 700; letter-spacing: .1em; text-align: left; text-transform: uppercase; }
 .caba-table td { padding: 11px 16px; color: var(--ink); border-top: 1px solid var(--line); vertical-align: middle; }
-/* Ayni urunun ikinci ve sonraki adresleri: ust cizgi silinir, satirlar tek blok
-   gibi okunur. */
-.caba-row:not(.caba-row--first) td { border-top: 0; padding-top: 0; }
-.caba-row--first td { padding-top: 13px; }
+/* Koridor ara basligi: liste depo rotasina gore gruplu (lib/pickList.ts). */
+.caba-table .caba-aisle th { height: auto; padding: 16px 16px 8px; color: var(--ink); background: var(--surface); border-top: 1px solid var(--line); font: 700 12px 'Space Grotesk', sans-serif; letter-spacing: .08em; }
+.caba-table .caba-aisle th span { margin-left: 10px; color: var(--muted); font-family: inherit; font-size: 11px; font-weight: 500; letter-spacing: 0; text-transform: none; }
+.caba-table thead + tbody .caba-aisle th { border-top: 0; }
+.caba-split { display: block; margin-top: 2px; color: var(--muted); font-size: 11px; }
+/* Isaretleme kutusu yalnizca kagitta: toplayici aldigi satiri isaretler. */
+.caba-check { display: none; }
+.caba-kbd { padding: 2px 6px; color: var(--muted); border: 1px solid var(--line); border-radius: 4px; font: 11px ui-monospace, SFMono-Regular, Menlo, monospace; }
 
 /* Adres birincil bilgi: en buyuk, monospace, tam kontrastli. */
 .caba-address { color: var(--ink); font: 600 19px ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: -.01em; white-space: nowrap; }
@@ -55,7 +59,7 @@
 .caba-quantity { color: var(--muted); font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
 
 .caba-misses h2 { display: flex; align-items: center; gap: 9px; margin: 0 0 4px; font-size: 15px; }
-.caba-misses h2 span { padding: 2px 8px; color: #9b6e1c; background: #fff4dc; border-radius: 999px; font-size: 11px; font-weight: 700; }
+.caba-misses h2 span { padding: 2px 8px; color: var(--warning); background: var(--warning-soft); border-radius: 999px; font-size: 11px; font-weight: 700; }
 .caba-misses__hint { margin: 0 0 14px; color: var(--muted); font-size: 12px; }
 .caba-table--misses td { color: var(--muted); }
 .caba-table--misses td strong { color: var(--ink); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
@@ -64,6 +68,75 @@
   .caba-summary { flex-direction: column; }
   .caba-summary > div { border-right: 0; border-bottom: 1px solid var(--line); }
   .caba-actions { flex-wrap: wrap; }
+}
+
+/* --- Çıktı Al: kaynak sekmeleri --- */
+.output-tabs { display: flex; flex-wrap: wrap; gap: 3px; width: max-content; max-width: 100%; margin-top: 22px; padding: 3px; background: var(--surface-muted); border: 1px solid var(--line); border-radius: 7px; }
+.output-tab { display: inline-flex; align-items: center; gap: 7px; height: 36px; padding: 0 14px; color: var(--muted); background: transparent; border: 0; border-radius: 5px; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
+.output-tab--active { color: var(--ink); background: var(--surface); box-shadow: 0 1px 2px rgba(0,0,0,.08); }
+.output-tab--active svg { color: var(--teal); }
+.caba-progress { margin: 14px 0 0; color: var(--muted); font-size: 13px; }
+
+/* adres aralığı */
+.output-range__fields { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; }
+.output-field { display: flex; flex-direction: column; gap: 7px; color: var(--muted); font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+.output-field input { width: 220px; height: 46px; padding: 0 14px; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 6px; font: 600 16px ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: 0; text-transform: none; }
+.output-field input::placeholder { color: var(--muted); font-size: 13px; font-weight: 400; }
+.output-field input:focus { outline: 0; border-color: var(--teal); box-shadow: 0 0 0 3px var(--teal-soft); }
+.output-range__arrow { padding-bottom: 12px; color: var(--muted); font-size: 18px; }
+.output-range__run { height: 46px; }
+.output-aisles { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 18px; }
+.output-aisles > span { margin-right: 4px; color: var(--muted); font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+.output-aisle { display: inline-flex; align-items: baseline; gap: 7px; padding: 6px 11px; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 5px; font: 600 13px ui-monospace, SFMono-Regular, Menlo, monospace; cursor: pointer; }
+.output-aisle small { color: var(--muted); font-size: 11px; font-weight: 500; }
+.output-aisle:hover, .output-aisle:focus-visible { color: var(--teal); border-color: var(--teal); }
+.caba-hint code { padding: 1px 5px; color: var(--ink); background: var(--surface-muted); border: 1px solid var(--line); border-radius: 3px; font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
+
+/* ürün seç */
+.output-picker { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 24px; align-items: start; }
+.output-search { display: flex; align-items: center; gap: 10px; height: 46px; padding: 0 14px; background: var(--surface); border: 1px solid var(--line); border-radius: 6px; }
+.output-search:focus-within { border-color: var(--teal); box-shadow: 0 0 0 3px var(--teal-soft); }
+.output-search svg { flex: 0 0 auto; color: var(--muted); }
+.output-search input { min-width: 0; flex: 1; color: var(--ink); background: transparent; border: 0; outline: 0; font: inherit; font-size: 14px; }
+/* Sarmalayıcı zaten görünür bir odak halkası çiziyor (Faz 4.1'deki çift halka sorunu). */
+.output-search input:focus-visible { outline: 0; }
+.output-results { margin-top: 8px; overflow: hidden; background: var(--surface); border: 1px solid var(--line); border-radius: 6px; }
+.output-result { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 12px; width: 100%; padding: 10px 14px; color: var(--ink); background: transparent; border: 0; border-bottom: 1px solid var(--line); font: inherit; text-align: left; cursor: pointer; }
+.output-result:last-child { border-bottom: 0; }
+.output-result:hover:not(:disabled), .output-result:focus-visible { background: var(--teal-soft); }
+.output-result:disabled { cursor: default; opacity: .6; }
+.output-result strong, .output-selected li strong { display: block; font: 600 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
+.output-result small, .output-selected li small { display: block; margin-top: 2px; overflow: hidden; color: var(--muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.output-result__meta, .output-selected__meta { color: var(--muted); font-size: 11px; white-space: nowrap; }
+.output-state { margin: 0; padding: 12px 14px; color: var(--muted); font-size: 12px; }
+.output-selected { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; }
+.output-selected__header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 14px; border-bottom: 1px solid var(--line); }
+.output-selected h2 { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 14px; }
+.output-selected h2 span { padding: 1px 8px; color: var(--teal); background: var(--teal-soft); border-radius: 999px; font-size: 11px; }
+.output-selected ul { max-height: 340px; margin: 0; padding: 0; overflow-y: auto; list-style: none; }
+.output-selected li { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 10px; padding: 9px 14px; border-bottom: 1px solid var(--line); }
+.output-remove { display: grid; place-items: center; width: 28px; height: 28px; color: var(--muted); background: transparent; border: 0; border-radius: 4px; cursor: pointer; }
+.output-remove:hover, .output-remove:focus-visible { color: var(--danger); background: var(--danger-soft); }
+.output-selected__empty { margin: 0; padding: 22px 14px; color: var(--muted); font-size: 13px; text-align: center; }
+.output-selected__actions { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 14px; }
+
+/* sonuç: düzen seçimi ve Excel */
+.caba-results__actions { flex-wrap: wrap; align-items: center; justify-content: flex-end; }
+.output-layout-toggle { display: flex; gap: 3px; padding: 3px; background: var(--surface-muted); border: 1px solid var(--line); border-radius: 6px; }
+.output-layout-toggle button { height: 30px; padding: 0 11px; color: var(--muted); background: transparent; border: 0; border-radius: 4px; font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; }
+.output-layout-toggle button[aria-pressed="true"] { color: var(--ink); background: var(--surface); box-shadow: 0 1px 2px rgba(0,0,0,.08); }
+.output-excel-status { margin: 10px 0 0; color: var(--muted); font-size: 12px; text-align: right; }
+
+/* ürüne göre: stok kodu ve adı bir kez, adresler alt alta */
+.caba-table--products td { vertical-align: top; }
+.caba-table--products .caba-row--first td { padding-top: 13px; }
+.caba-table--products .caba-row:not(.caba-row--first) td { padding-top: 3px; border-top: 0; }
+.caba-table--products .caba-address { font-size: 17px; }
+.caba-product__code strong { display: block; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.caba-product__name { min-width: 220px; white-space: normal; }
+
+@media (max-width: 900px) {
+  .output-picker { grid-template-columns: 1fr; }
 }
 
 /* --- YAZDIRMA ---
@@ -83,12 +156,37 @@
   .caba-table td { padding: 7px 10px; color: #000; border-top-color: #ddd; }
   .caba-address { font-size: 15px; }
 
-  /* Bir urunun adresleri sayfa sonunda ikiye bolunmesin. */
-  .caba-row--first, .caba-misses tr { break-inside: avoid; }
+  /* Satir sayfa sonunda ikiye bolunmesin; koridor basligi sayfanin dibinde
+     yalniz kalmasin. */
+  .caba-row, .caba-misses tr { break-inside: avoid; }
+  .caba-aisle { break-after: avoid; }
+  .caba-table .caba-aisle th { padding: 10px 10px 4px; color: #000; background: transparent; border-top: 1.5px solid #000; font-size: 11px; }
+  .caba-table .caba-aisle th span { color: #444; }
+  .caba-check { display: table-cell; width: 24px; padding-right: 0; }
+  .caba-checkbox { display: inline-block; width: 12px; height: 12px; border: 1.5px solid #000; border-radius: 2px; vertical-align: middle; }
+  .caba-split { color: #444; }
+
+  /* "Adresi bulunamayanlar" başlığı sayfanın dibinde tablosuz kalmasın
+     (ilk PDF'te 1. sayfada başlık, 2. sayfada tablo çıktı). */
+  .caba-misses h2, .caba-misses__hint { break-after: avoid; }
+
+  /* Ürüne göre: bir ürünün adresleri sayfa sonunda bölünmesin. */
+  .caba-product { break-inside: avoid; }
+  .caba-table--products .caba-row--first td { border-top: 1px solid #999; }
+  .caba-table--products .caba-row:not(.caba-row--first) td { padding-top: 2px; }
+  .caba-table--products .caba-address { font-size: 14px; }
+  .output-excel-status { display: none; }
   .caba-misses { break-before: auto; }
   .caba-misses h2 span { border: 1px solid #999; background: transparent; color: #000; }
 
   h1 { font-size: 20px; }
   .page-header__description { color: #444; font-size: 11px; }
   .intro__eyebrow, .caba-note, .caba-misses__hint { color: #444; }
+}
+
+/* Kagit kenar boslugu ve alt bilgi: uzun listelerde sayfa sirasi kaybolmasin. */
+@page {
+  margin: 12mm 10mm 14mm;
+  @bottom-left { content: "StokAdres · Adres Listesi"; font-size: 9pt; color: #444; }
+  @bottom-right { content: "Sayfa " counter(page) " / " counter(pages); font-size: 9pt; color: #444; }
 }

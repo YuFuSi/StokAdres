@@ -1,8 +1,10 @@
 // OTOMATIK URETILDI - ELLE DUZENLEMEYIN
 //
-// Kaynak: Supabase projesi ryuguxxnmccybquqigji, 2026-09-10
+// Kaynak: Supabase projesi ryuguxxnmccybquqigji (Tokyo), 2026-09-10.
+// 2026-09-11'den beri aktif proje zxdojwbrttdarcgytzsi (Frankfurt); sema
+// tasimada birebir kopyalandi ve dogrulandi.
 // Yeniden uretmek icin: Supabase MCP `generate_typescript_types`
-// veya: supabase gen types typescript --project-id ryuguxxnmccybquqigji
+// veya: supabase gen types typescript --project-id zxdojwbrttdarcgytzsi
 //
 // Sema degistiginde (yeni migration) bu dosya da yenilenmelidir.
 //
@@ -14,8 +16,8 @@
 // 20260910131409/131448: product_filter_counts view'i ve search_products
 // fonksiyonu eklendi; products_with_metrics'e stock_code_normalized geldi.
 //
-// 20260910213000: product_filter_counts'a no_address kolonu.
-// 20260910233000: address_record_counts view'i ve search_address_records
+// 20260910191458: product_filter_counts'a no_address kolonu.
+// 20260910193945: address_record_counts view'i ve search_address_records
 // fonksiyonu (Adresler ekraninin sunucu tarafi sorgusu).
 
 export type Json =
@@ -307,6 +309,24 @@ export type Database = {
       }
     }
     Views: {
+      address_aisle_summary: {
+        Row: {
+          address_count: number | null
+          aisle: string | null
+          carton_count: number | null
+          product_count: number | null
+          rack_count: number | null
+        }
+        Relationships: []
+      }
+      address_daily_activity: {
+        Row: {
+          carton_count: number | null
+          created_count: number | null
+          day: string | null
+        }
+        Relationships: []
+      }
       address_record_counts: {
         Row: {
           active_cartons: number | null
@@ -485,6 +505,28 @@ export type Database = {
       }
       show_limit: { Args: never; Returns: number }
       show_trgm: { Args: { "": string }; Returns: string[] }
+      address_route_key: { Args: { p_address: string }; Returns: string }
+      list_addresses_in_range: {
+        Args: { p_from_key: string; p_to_key: string }
+        Returns: {
+          address: string
+          carton_count: number
+          id: string
+          product_id: string
+          route_key: string
+          stock_code: string
+          stock_name: string
+        }[]
+      }
+      suggest_stock_codes: {
+        Args: { p_codes: string[]; p_limit?: number }
+        Returns: {
+          input_code: string
+          score: number
+          stock_code: string
+          stock_name: string
+        }[]
+      }
       write_audit_log: {
         Args: {
           p_action: string

@@ -26,6 +26,21 @@ const CONNECTION_TIMEOUT_MS = 4_000
  * istenseydi 94.900 satırlık tabloyu taramak gerekirdi — dakikada bir
  * çalışan bir sağlık kontrolü için kabul edilemez.
  */
+/**
+ * Çevrimdışı olmanın sebebi.
+ *
+ * `navigator.onLine === false` kesin olarak "internet yok" demek. `true` ise
+ * internet büyük olasılıkla var ve sorun veritabanı tarafında: ücretsiz
+ * Supabase projeleri 7 gün kullanılmayınca durduruluyor (2026-09-11, plan:
+ * free). Kullanıcıya "bağlantı yok" demek onu yanlış yere baktırırdı.
+ */
+export function offlineReason(): 'no-internet' | 'database' {
+  return typeof navigator !== 'undefined' && navigator.onLine === false ? 'no-internet' : 'database'
+}
+
+export const PAUSED_PROJECT_HINT =
+  'İnternet varsa veritabanı projesi durdurulmuş olabilir: ücretsiz Supabase projeleri 7 gün kullanılmayınca durur. supabase.com → StokAdres projesi → Restore.'
+
 export async function checkConnection(): Promise<boolean> {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), CONNECTION_TIMEOUT_MS)

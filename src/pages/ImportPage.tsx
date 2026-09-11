@@ -8,6 +8,8 @@ import {
   type OperationImportRow,
 } from '../services/operationImportService'
 import { applyRows, buildPreview, type ApplyOutcome, type PreviewRow, type PreviewStatus } from '../services/operationImportApply'
+import { normalizeStockCode } from '../services/productLookup'
+import { suggestStockCodes, type StockCodeSuggestion } from '../services/stockCodeSuggestions'
 import './ImportPage.css'
 
 // Kullanıcının gerçek akışı: depoda kâğıda yaz → Gemini ile Excel'e çevir →
@@ -59,12 +61,15 @@ export function ImportPage() {
   const fileRef = useRef<HTMLInputElement>(null)
   const abortRef = useRef<AbortController | null>(null)
   const recheckTimer = useRef<number | undefined>(undefined)
+  const [suggestions, setSuggestions] = useState<Map<string, StockCodeSuggestion[]>>(new Map())
+  // Öneri istekleri yavaş dönebilir; yalnızca en son istenen sonuç yazılır.
+  const suggestionRequest = useRef(0)
 
   useEffect(() => () => { window.clearTimeout(recheckTimer.current); abortRef.current?.abort() }, [])
 
   const reset = () => {
     setStage('choose'); setOperation(null); setPastedText(''); setSourceLabel('')
-    setRows([]); setExcluded(new Set()); setOutcome(null); setError(''); setProgress(null)
+    setRows([]); setExcluded(new Set()); setOutcome(null); setError(''); setProgress(null); setSuggestions(new Map())
   }
 
   const loadPreview = async (parse: () => OperationImportRow[] | Promise<OperationImportRow[]>, label: string) => {
@@ -75,6 +80,7 @@ export function ImportPage() {
       if (parsed.length === 0) { setError('Veride hiç satır bulunamadı.'); return }
       const preview = await buildPreview(operation.id, parsed)
       setRows(preview); setExcluded(new Set()); setSourceLabel(label); setStage('preview')
+      refreshSuggestions(preview)
     } catch (reason: unknown) {
       console.error(reason)
       setError(reason instanceof OperationImportFileError || reason instanceof Error ? reason.message : 'Veri okunamadı.')
@@ -89,7 +95,7 @@ export function ImportPage() {
     recheckTimer.current = window.setTimeout(() => {
       setIsRechecking(true)
       buildPreview(operation.id, nextRows.map(toImportRow))
-        .then(setRows)
+        .then((nextRows) => { setRows(nextRows); refreshSuggestions(nextRows) })
         .catch((reason: unknown) => { console.error(reason); setError('Satırlar yeniden kontrol edilemedi.') })
         .finally(() => setIsRechecking(false))
     }, RECHECK_DELAY_MS)
@@ -107,6 +113,29 @@ export function ImportPage() {
         }
         return { ...row, [field]: value }
       })
+      scheduleRecheck(next)
+      return next
+    })
+  }
+
+  // "Stok yok" satırları için öneri arar. Önizlemeyi bekletmez: tablo hemen
+  // görünür, öneriler geldikçe satırlara eklenir.
+  function refreshSuggestions(preview: PreviewRow[]) {
+    const request = ++suggestionRequest.current
+    const missing = preview.filter((row) => row.status === 'missing').map((row) => row.stockCode)
+    if (missing.length === 0) { setSuggestions(new Map()); return }
+    suggestStockCodes(missing)
+      .then((found) => { if (request === suggestionRequest.current) setSuggestions(found) })
+      .catch((reason: unknown) => console.error(reason))
+  }
+
+  const suggestionsFor = (row: PreviewRow) =>
+    row.status === 'missing' ? suggestions.get(normalizeStockCode(row.stockCode)) ?? [] : []
+
+  const applyStockCodeFixes = (fixes: Array<{ rowNumber: number; stockCode: string }>) => {
+    const byRow = new Map(fixes.map((fix) => [fix.rowNumber, fix.stockCode]))
+    setRows((current) => {
+      const next = current.map((row) => byRow.has(row.rowNumber) ? { ...row, stockCode: byRow.get(row.rowNumber)! } : row)
       scheduleRecheck(next)
       return next
     })
@@ -161,6 +190,11 @@ export function ImportPage() {
             <textarea
               value={pastedText}
               onChange={(event) => setPastedText(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key !== 'Enter' || !(event.ctrlKey || event.metaKey) || !pastedText.trim() || isBusy) return
+                event.preventDefault()
+                void loadPreview(() => parseOperationImportText(pastedText), 'Yapıştırılan liste')
+              }}
               placeholder={`İlk satır başlık olmalı, örneğin:\n${operation.columns.replace(/ · /g, '\t')}`}
               rows={9}
               autoFocus
@@ -219,6 +253,16 @@ export function ImportPage() {
     missing: rows.filter((row) => row.status === 'missing').length,
     invalid: rows.filter((row) => row.status === 'invalid').length,
   }
+  const fixedAddressCount = rows.filter((row) => row.addressNote?.kind === 'fixed').length
+  // Biçimi tanınmayan adres satırı engellenmez (bilinmeyen gerçek bir adres
+  // olabilir), ama yazılacaklar arasındaysa öne çıkarılır.
+  const unrecognizedRows = rows.filter((row) => row.addressNote?.kind === 'unrecognized' && (row.status === 'ready' || row.status === 'update'))
+  // Toplu uygulanabilecek öneriler: yalnızca tek ve varyanttan gelen (harf/rakam
+  // karışıklığı gibi) eşleşmeler. Benzerlik önerileri tek tek seçilir.
+  const confidentFixes = rows.flatMap((row) => {
+    const list = suggestionsFor(row)
+    return list.length === 1 && list[0].source === 'variant' ? [{ rowNumber: row.rowNumber, stockCode: list[0].stockCode }] : []
+  })
 
   return (
     <main className="operations-page import-page">
@@ -230,6 +274,8 @@ export function ImportPage() {
         {counts.unchanged > 0 && <span className="import-count">{counts.unchanged} değişmeyecek</span>}
         {counts.missing > 0 && <span className="import-count import-count--missing">{counts.missing} stok yok</span>}
         {counts.invalid > 0 && <span className="import-count import-count--invalid">{counts.invalid} hatalı</span>}
+        {fixedAddressCount > 0 && <span className="import-count">{fixedAddressCount} adres düzeltildi</span>}
+        {unrecognizedRows.length > 0 && <span className="import-count import-count--update">{unrecognizedRows.length} adres biçimi tanınmadı</span>}
         {isRechecking && <span className="import-count import-count--busy">kontrol ediliyor…</span>}
       </section>
 
@@ -244,6 +290,29 @@ export function ImportPage() {
             <button className="button button--secondary" type="button"
               onClick={() => setExcluded((current) => { const next = new Set(current); updateRows.forEach((row) => next.delete(row.rowNumber)); return next })}>
               Hepsini üzerine yaz
+            </button>
+          </div>
+        </div>
+      )}
+
+      {confidentFixes.length > 0 && (
+        <div className="import-conflict-bar">
+          <span><strong>{confidentFixes.length}</strong> kayıtsız stok kodunun tek bir kesin karşılığı bulundu (harf/rakam karışıklığı gibi). Tablodaki önerilere tek tek tıklayabilir ya da hepsini uygulayabilirsiniz.</span>
+          <div>
+            <button className="button button--secondary" type="button" onClick={() => applyStockCodeFixes(confidentFixes)}>
+              Önerileri uygula
+            </button>
+          </div>
+        </div>
+      )}
+
+      {unrecognizedRows.length > 0 && (
+        <div className="import-conflict-bar">
+          <span><strong>{unrecognizedRows.length}</strong> satırın adresi beklenen biçimde değil (örnek: H21-01). Gerçek bir adresse olduğu gibi yazılır; değilse hücrede düzeltin.</span>
+          <div>
+            <button className="button button--secondary" type="button"
+              onClick={() => setExcluded((current) => { const next = new Set(current); unrecognizedRows.forEach((row) => next.add(row.rowNumber)); return next })}>
+              Bu satırları atla
             </button>
           </div>
         </div>
@@ -284,6 +353,20 @@ export function ImportPage() {
                   <td>
                     <span className={`import-status import-status--${row.status}`}>{STATUS_LABEL[row.status]}</span>
                     {row.detail && <small className="import-detail">{row.detail}</small>}
+                    {row.addressNote?.kind === 'fixed' && <small className="import-note import-note--fixed">{row.addressNote.value} olarak yazılacak</small>}
+                    {row.addressNote?.kind === 'unrecognized' && <small className="import-note import-note--unrecognized">Adres biçimi tanınmadı</small>}
+                    {suggestionsFor(row).length > 0 && (
+                      <div className="import-suggestions">
+                        <span>Bunu mu demek istediniz?</span>
+                        {suggestionsFor(row).map((suggestion) => (
+                          <button key={suggestion.stockCode} type="button" title={suggestion.stockName}
+                            className={suggestion.source === 'variant' ? 'import-suggestion import-suggestion--strong' : 'import-suggestion'}
+                            onClick={() => applyStockCodeFixes([{ rowNumber: row.rowNumber, stockCode: suggestion.stockCode }])}>
+                            {suggestion.stockCode}
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </td>
                 </tr>
               )

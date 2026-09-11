@@ -4,6 +4,12 @@ import path from 'node:path'
 
 const isDev = process.argv.includes('--dev')
 
+// Yedekler kullanıcıya diyalog açtırmadan hep aynı yere yazılır; klasör adı
+// burada sabit, renderer yol veremez.
+const backupDirectory = (): string => path.join(app.getPath('documents'), 'StokAdres Yedekleri')
+const BACKUP_FOLDER_NAME = /^StokAdres_yedek_\d{4}-\d{2}-\d{2}_\d{4}$/
+const BACKUP_FILE_NAMES = new Set(['bilgi.txt', 'stoklar.csv', 'barkodlar.csv', 'adresler.csv'])
+
 const createWindow = (): void => {
   const window = new BrowserWindow({
     width: 1200,
@@ -80,6 +86,33 @@ app.whenReady().then(() => {
     if (result.canceled || !result.filePath) return { canceled: true }
     await fs.writeFile(result.filePath, payload.content, payload.encoding)
     return { canceled: false, filePath: result.filePath }
+  })
+  ipcMain.handle('save-backup', async (_event, payload: { folderName: unknown; files: unknown }) => {
+    // Klasör ve dosya adları renderer'dan geliyor: yol ayırıcısı ya da "..",
+    // yedek klasörünün dışına yazdırabilirdi. Yalnızca backupService'in ürettiği
+    // klasör biçimi ve dört sabit dosya adı kabul edilir.
+    if (typeof payload?.folderName !== 'string' || !BACKUP_FOLDER_NAME.test(payload.folderName)) {
+      throw new Error('Geçersiz yedek klasörü adı.')
+    }
+    if (!Array.isArray(payload.files) || payload.files.length === 0) {
+      throw new Error('Yedek dosyası yok.')
+    }
+    const files = payload.files.map((file: { name?: unknown; content?: unknown }) => {
+      if (typeof file?.name !== 'string' || !BACKUP_FILE_NAMES.has(file.name) || typeof file.content !== 'string') {
+        throw new Error('Geçersiz yedek dosyası.')
+      }
+      return { name: file.name, content: file.content }
+    })
+    const folderPath = path.join(backupDirectory(), payload.folderName)
+    await fs.mkdir(folderPath, { recursive: true })
+    for (const file of files) await fs.writeFile(path.join(folderPath, file.name), file.content, 'utf8')
+    return { folderPath }
+  })
+  ipcMain.handle('open-backup-folder', async () => {
+    const directory = backupDirectory()
+    await fs.mkdir(directory, { recursive: true })
+    const error = await shell.openPath(directory)
+    return { ok: error === '' }
   })
 
   createWindow()

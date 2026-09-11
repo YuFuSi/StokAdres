@@ -100,3 +100,71 @@ analyze public.product_barcodes;
 ```
 
 Bu, arama index'lerinin (`pg_trgm`) 100k satırda doğru kullanılmasını sağlar.
+
+### 300 bin ürün (2026-09-11 kararı)
+
+Veritabanı ücretsiz planda, sınır **500 MB**. 300 bin ürün yüklenince tahmin
+~470 MB; bunun ~175 MB'ı toplu yüklemenin yazdığı işlem geçmişi (her ürün için
+bir "stok oluşturuldu", her barkod için bir "stok güncellendi" kaydı).
+
+Kullanıcının kararı: **yükleme bittikten sonra toplu yükleme geçmişi silinir.**
+- Silinecekler yalnızca `product-created` ve barkod kaynaklı `product-updated`
+  (`metadata.change_type`) kayıtları. Adres geçmişine dokunulmaz.
+- Kalıcı silme: Claude yükleme günü önce silinecek kayıt sayısını gösterir,
+  onay alındıktan sonra migration ile siler.
+- Silinenlerin kopyası: taşımada alınan `Masaüstü\StokAdres-tasima\tokyo.sql`
+  (95 binin geçmişi) ve Tokyo projesi.
+
+Uygulama tarafı 300 bine hazır: tüm satırları çeken katman 1 milyon satıra
+kadar çalışır, yedek CSV'dir. Yükleme bittikten sonra da `analyze` çalıştırın.
+
+---
+
+## Yedekten kurtarma
+
+Uygulama **Ayarlar → Yedek Al** ile
+`Belgeler\StokAdres Yedekleri\StokAdres_yedek_<tarih>\` klasörüne CSV dosyaları
+yazar. Uygulamada geri yükleme düğmesi **bilerek yok**: geri yükleme
+mevcut veriyi değiştiren bir işlem ve ancak gerçekten gerektiğinde, bilinçli
+yapılmalı.
+
+Yedek klasöründeki dosyalar:
+
+| Dosya | İçerik |
+|---|---|
+| `bilgi.txt` | Yedek tarihi ve satır sayıları |
+| `stoklar.csv` | `products` tablosunun tüm kolonları (`id` dahil) |
+| `barkodlar.csv` | `product_barcodes` tablosunun tüm kolonları |
+| `adresler.csv` | `address_records` tablosunun tüm kolonları |
+
+**Neden CSV, Excel değil:** 300 bin ürünlük yedek (680 bin satır) Excel olarak
+61 sn sürüyor ve 2,4 GB bellek istiyor, uygulama penceresi donuyor; CSV 1 sn
+(2026-09-11 ölçümü). Dosyalar UTF-8 ve BOM'suz — Supabase'e olduğu gibi
+yüklenebilsin diye. Excel'de açınca Türkçe karakterler bozuk görünürse:
+Veri → Metinden/CSV'den → Dosya kaynağı "65001: Unicode (UTF-8)".
+
+`id`'ler korunduğu için ürün, barkod ve adres ilişkileri yedekten birebir
+kurulabilir. `audit_logs` (işlem geçmişi) yedekte yok.
+
+### Önce: gerçekten veri mi kayboldu?
+
+Uygulama "Veritabanına ulaşılamıyor" diyorsa büyük olasılıkla **proje
+durdurulmuştur**. Ücretsiz Supabase projeleri 7 gün kullanılmayınca durur;
+veri silinmez. supabase.com → StokAdres projesi → **Restore**. Yedeğe gerek
+yoktur.
+
+### Gerçek veri kaybında
+
+1. Hedef projede şema hazır olmalı (`supabase/migrations/` sırayla).
+2. Supabase → Table Editor → tablo → **Import data from CSV**, şu sırayla
+   (yabancı anahtarlar yüzünden sıra önemli):
+   `stoklar.csv` → `products`, `barkodlar.csv` → `product_barcodes`,
+   `adresler.csv` → `address_records`.
+3. Uygulamayı açıp Genel Bakış sayılarını yedeğin `bilgi.txt` dosyasıyla
+   karşılaştırın.
+
+> ⚠️ İçe aktarma sırasında audit trigger'ları her satır için bir işlem geçmişi
+> kaydı üretir. Bu zararsızdır ama İşlem Geçmişi ekranı kalabalıklaşır.
+>
+> Bu prosedür henüz bir tatbikatla uçtan uca denenmedi. Gerçek bir kayıpta önce
+> boş bir test projesinde denemek en güvenlisi.

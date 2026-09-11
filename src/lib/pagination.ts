@@ -21,7 +21,10 @@ export const SUPABASE_PAGE_SIZE = 1000
  * kırpılmaz; açık bir hata fırlatılır. Sessiz eksik veri, bu modülün
  * çözmek için var olduğu sorunun ta kendisidir.
  */
-const MAX_PAGES = 200
+// 200 idi (200.000 satır). 300.000 ürünlük hedefte "Stoklar" dışa aktarımı ve
+// Yedek Al (barkodlar ürünlerden fazla) bu sınıra takılıp dururdu. 1.000 sayfa
+// = 1.000.000 satır; hâlâ kaçak döngüye karşı bir sınır.
+const MAX_PAGES = 1000
 
 type PageResult<Row> = {
   data: Row[] | null

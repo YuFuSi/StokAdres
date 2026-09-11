@@ -7,8 +7,10 @@ import { getProductFilterCounts, listProducts, queryProducts, type ProductListIt
 import { findActiveAddresses, findBarcodesByProductId, type AddressLite } from '../services/productLookup'
 import type { Product } from '../types/product'
 import { useTheme, type ThemePreference } from '../components/ThemeProvider'
-import { checkConnection, type ConnectionState } from '../services/connectionStatus'
+import { checkConnection, offlineReason, PAUSED_PROJECT_HINT, type ConnectionState } from '../services/connectionStatus'
+import { canOpenBackupFolder, createBackup, getLastBackup, openBackupFolder, type LastBackup } from '../services/backupService'
 import { formatNumber } from '../lib/format'
+import { loadRecentSearches, rememberSearch } from '../lib/recentSearches'
 import './OperationsPage.css'
 
 // 'import' artık burada değil: içe aktarma kendi ekranına taşındı
@@ -106,7 +108,7 @@ function ExportHub() {
     <section className="export-flow">
       <Choice step="01" title="Veri" value={datasets[0] ?? ''} onChange={value => format === 'csv' ? setDatasets([value as ExportDataset]) : toggle(value as ExportDataset)} options={[['stocks', 'Stoklar'], ['addresses', 'Adresler'], ['stock-address', 'Stok + Adres'], ['summary', 'Özet']]} />
       {format === 'xlsx' && <p className="export-hint">Excel için birden çok veri kümesini seçebilirsiniz.</p>}
-      {datasets.includes('stocks') && <p className="export-hint">Stoklar kümesi ~95.000 satır; hazırlanması biraz sürer.</p>}
+      {datasets.includes('stocks') && <p className="export-hint">Stoklar kümesi tüm ürün kartlarını içerir; hazırlanması biraz sürer.{format === 'xlsx' ? ' Yüz binlerce satırda Excel dosyası bir dakikaya yakın sürer ve bilgisayarı yorar — bu boyutta CSV seçin.' : ''}</p>}
       <Choice step="02" title="Format" value={format} onChange={value => { setFormat(value as 'csv' | 'xlsx'); if (value === 'csv' && datasets.length > 1) setDatasets([datasets[0]]) }} options={[['csv', 'CSV'], ['xlsx', 'Excel (.xlsx)']]} />
       <div className="export-action">
         <p role={isExporting ? 'status' : undefined}>{progress || message || 'CSV tek veri kümesi, Excel seçili veri kümeleri için ayrı worksheet oluşturur.'}</p>
@@ -133,7 +135,7 @@ const FINDER_DEBOUNCE_MS = 250
  * arama 0,6–1,6 sn, adresler ~0,3 sn — sürenin büyük kısmı ağ gecikmesi.
  *
  * `search_products` stok kodu, stok adı, barkod VE aktif adres arıyor
- * (20260910223000). Adres yazıldığında o raftaki ürünler dönüyor — ters arama
+ * (20260910192933). Adres yazıldığında o raftaki ürünler dönüyor — ters arama
  * ayrı bir ekran değil, aynı kutunun içinde.
  */
 function Finder() {
@@ -144,6 +146,9 @@ function Finder() {
   const [total, setTotal] = useState(0)
   const [isSearching, setIsSearching] = useState(false)
   const [error, setError] = useState('')
+  // Boş ekranın alt yarısı eskiden boştu; tekrar tekrar aranan kodlar/adresler
+  // için dürüst bir içerik.
+  const [recentSearches, setRecentSearches] = useState<string[]>(() => loadRecentSearches())
 
   // Her tuş vuruşunda sorgu atmamak için gecikme. Barkod okuyucu gibi hızlı
   // girişlerde de tek sorguya iniyor.
@@ -177,6 +182,9 @@ function Finder() {
         setResults(items)
         setTotal(matchCount)
         setAddressesByProduct(addresses)
+        // Yalnızca sonuç veren aramalar hatırlanır; yarım yazılmış "G2" gibi
+        // ara durumlar listeyi doldurmasın diye sonuçsuzlar atlanıyor.
+        if (items.length > 0) setRecentSearches(rememberSearch(activeQuery))
       } catch (reason: unknown) {
         console.error(reason)
         if (!cancelled) {
@@ -207,7 +215,13 @@ function Finder() {
     </section>
 
     {error && <div className="operation-state operation-state--error" role="alert"><p>{error}</p></div>}
-    {!error && !trimmedQuery && <div className="operation-state"><p>Stok kodu, stok adı veya barkod yazın. Adres yazarsanız (örn. G27-04) o raftaki ürünler listelenir.</p></div>}
+    {!error && !trimmedQuery && <div className="operation-state">
+      <p>Stok kodu, stok adı veya barkod yazın. Adres yazarsanız (örn. G27-04) o raftaki ürünler listelenir.</p>
+      {recentSearches.length > 0 && <div className="finder-recent" aria-label="Son aramalar">
+        <span>Son aramalar</span>
+        {recentSearches.map((item) => <button key={item} type="button" className="finder-recent__item" onClick={() => setQuery(item)}>{item}</button>)}
+      </div>}
+    </div>}
     {!error && trimmedQuery && isSearching && <div className="operation-state" role="status"><p>Aranıyor…</p></div>}
     {!error && trimmedQuery && !isSearching && visible.length === 0 && <div className="operation-state" role="status"><p>“{trimmedQuery}” ile eşleşen stok bulunamadı.</p></div>}
 
@@ -254,12 +268,33 @@ const SETTINGS_CONNECTION_TEXT: Record<ConnectionState, string> = { checking: 'D
 function Settings() {
   const { theme, setTheme } = useTheme()
   const [connection, setConnection] = useState<ConnectionState>('checking')
+  const [lastBackup, setLastBackup] = useState<LastBackup | null>(() => getLastBackup())
+  const [backupProgress, setBackupProgress] = useState('')
+  const [backupMessage, setBackupMessage] = useState('')
+  const [isBackingUp, setIsBackingUp] = useState(false)
 
   useEffect(() => {
     let cancelled = false
     void checkConnection().then((ok) => { if (!cancelled) setConnection(ok ? 'online' : 'offline') })
     return () => { cancelled = true }
   }, [])
+
+  const runBackup = async () => {
+    if (isBackingUp) return
+    setIsBackingUp(true)
+    setBackupMessage('')
+    try {
+      const summary = await createBackup(setBackupProgress)
+      setLastBackup(getLastBackup())
+      setBackupMessage(`Yedek alındı · ${formatNumber(summary.products)} stok, ${formatNumber(summary.barcodes)} barkod, ${formatNumber(summary.addresses)} adres.`)
+    } catch (reason: unknown) {
+      console.error(reason)
+      setBackupMessage('Yedek alınamadı. Bağlantıyı kontrol edip tekrar deneyin.')
+    } finally {
+      setIsBackingUp(false)
+      setBackupProgress('')
+    }
+  }
 
   return <main className="operations-page">
     <Intro title="Ayarlar" description="Uygulama tercihleri ve sistem bilgileri." />
@@ -275,6 +310,7 @@ function Settings() {
         <h2>Veritabanı</h2>
         <p>Kayıtlar Supabase üzerinde tutulur. Uygulama açıldığında canlı veriyi okur.</p>
         <span className="settings-value"><span className={`status-dot status-dot--${connection}`} />{SETTINGS_CONNECTION_TEXT[connection]}</span>
+        {connection === 'offline' && <p className="settings-warning" role="alert">{offlineReason() === 'no-internet' ? 'Bilgisayarın internet bağlantısı yok.' : PAUSED_PROJECT_HINT}</p>}
       </article>
       <article>
         <h2>Uygulama</h2>
@@ -282,7 +318,27 @@ function Settings() {
         <span className="settings-value">Sürüm {__APP_VERSION__}</span>
       </article>
     </section>
+
+    <section className="settings-backup" aria-labelledby="settings-backup-title">
+      <div>
+        <h2 id="settings-backup-title">Yedek</h2>
+        <p>
+          Veritabanının ücretsiz planı otomatik yedek tutmuyor. Stoklar, barkodlar ve adres kayıtları tarihli bir klasöre CSV dosyaları olarak yazılır
+          {canOpenBackupFolder() ? <> (<strong>Belgeler › StokAdres Yedekleri</strong>)</> : null}. Bu dosyalar veritabanına doğrudan geri yüklenebilir; eski yedekler silinmez.
+        </p>
+        <span className="settings-value" role={isBackingUp ? 'status' : undefined}>
+          {backupProgress || backupMessage || (lastBackup ? `Son yedek: ${formatDateTime(lastBackup.at)}` : 'Henüz yedek alınmadı.')}
+        </span>
+      </div>
+      <div className="settings-backup__actions">
+        {canOpenBackupFolder() && <button className="button button--secondary" type="button" onClick={() => void openBackupFolder()}>Klasörü Aç</button>}
+        <button className="button button--primary" type="button" disabled={isBackingUp} onClick={() => void runBackup()}>{isBackingUp ? 'Yedekleniyor…' : 'Yedek Al'}</button>
+      </div>
+    </section>
   </main>
+}
+function formatDateTime(iso: string): string {
+  return new Intl.DateTimeFormat('tr-TR', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(iso))
 }
 function Intro({ title, description }: { title: string; description: string }) { return <header className="page-header"><div><h1>{title}</h1><p className="page-header__description">{description}</p></div></header> }
 // Adim numarasi CSS'teki :nth-child sayacindan geliyordu; araya kosullu bir

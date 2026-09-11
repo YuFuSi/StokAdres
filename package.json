@@ -1,7 +1,7 @@
 {
   "name": "stokadres",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.2.0",
   "author": "StokAdres",
   "description": "Stok ve adresleme yönetimi için yerel masaüstü uygulaması",
   "main": "dist-electron/main.js",
@@ -39,6 +39,7 @@
   "build": {
     "appId": "com.stokadres.app",
     "productName": "StokAdres",
+    "electronDist": "node_modules/electron/dist",
     "directories": {
       "output": "release"
     },

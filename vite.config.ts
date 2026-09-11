@@ -53,6 +53,16 @@ export default defineConfig({
   base: './',
   define: { __APP_VERSION__: JSON.stringify(APP_VERSION) },
   plugins: [react(), productionCsp()],
+  server: {
+    watch: {
+      // Build çıktıları izlenmez. Eskiden Vite `release/`i de izliyordu:
+      // `npm run build:win` sırasında win-unpacked.tmp dosyaları için sürekli
+      // sayfa yeniledi, izleyicinin kilitleri electron-builder'ın yeniden
+      // adlandırmasını EPERM ile düşürdü ve dev sunucusu sonunda bir .dll
+      // üzerinde EBUSY ile çöktü (2026-09-11, CLAUDE.md Tuzak #8b).
+      ignored: ['**/release/**', '**/dist/**', '**/dist-electron/**'],
+    },
+  },
   build: {
     outDir: 'dist'
   }
