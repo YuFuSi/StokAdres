@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { CabaMatch } from '../services/cabaLookup'
-import { buildPickList } from './pickList'
+import { buildPickList, buildProductList, countAisles } from './pickList'
 
 const match = (rowNumber: number, stockCode: string, addresses: Array<[string, number]>): CabaMatch => ({
   rowNumber,
@@ -42,5 +42,34 @@ describe('buildPickList', () => {
 
   it('boş eşleşmede boş liste döner', () => {
     expect(buildPickList([])).toEqual({ rows: [], groups: [] })
+  })
+})
+
+describe('buildProductList', () => {
+  it('her ürünü bir kez, adreslerini rota sırasında alt alta verir', () => {
+    const [group] = buildProductList([match(1, 'TEKS1', [['J09-02', 3], ['F13-01', 5], ['F14-DİBİ', 1]])])
+    expect(group.stockCode).toBe('TEKS1')
+    expect(group.addresses.map((address) => [address.address, address.cartonCount])).toEqual([['F13-01', 5], ['F14-DİBİ', 1], ['J09-02', 3]])
+    expect(group.totalCartons).toBe(9)
+    expect(group.cabaQuantity).toBe('10')
+  })
+
+  it('ürünleri ilk adreslerine göre rota sırasında dizer', () => {
+    const groups = buildProductList([
+      match(1, 'B', [['H01-01', 1]]),
+      match(2, 'A', [['K05-01', 1], ['F20-02', 1]]),
+      match(3, 'C', [['G06-01', 1]]),
+    ])
+    expect(groups.map((group) => group.stockCode)).toEqual(['A', 'C', 'B'])
+  })
+
+  it('adresi olmayan ürünü listeye koymaz', () => {
+    expect(buildProductList([match(1, 'BOS', [])])).toEqual([])
+  })
+})
+
+describe('countAisles', () => {
+  it('biçim dışı adresleri saymadan farklı koridorları sayar', () => {
+    expect(countAisles([match(1, 'A', [['F13-01', 1], ['F14-02', 1]]), match(2, 'B', [['G06-01', 1], ['RAMPA', 1]])])).toBe(2)
   })
 })

@@ -7,6 +7,7 @@ import type { AddressRecord } from '../types/addressRecord'
 import { formatNumber } from '../lib/format'
 import { rowNavigationProps } from '../lib/rowNavigation'
 import { toStoredAddress } from '../lib/addressFormat'
+import { InlineEdit } from '../components/InlineEdit'
 import './AddressesPage.css'
 
 type AddressesPageProps = {
@@ -172,6 +173,24 @@ export function AddressesPage({ initialSelectedRecordId = null }: AddressesPageP
     }
   }
 
+  // Tablo hücresinden yerinde düzeltme. Liste yeniden çekilmiyor: satır yerinde
+  // güncelleniyor, böylece "Güncellenme tarihi" sıralamasında düzeltilen satır
+  // kullanıcının gözünün önünden kaybolmuyor. Özet sayaçları (aktif/pasif,
+  // toplam koli) değişebildiği için ayrıca tazeleniyor.
+  const saveInline = async (record: AddressRecord, changes: { address?: string; cartonCount?: number; isActive?: boolean }) => {
+    try {
+      const updated = await addressRecordService.update(record.id, changes)
+      setRecords((current) => current.map((item) => item.id === updated.id ? updated : item))
+      setSelectedRecord((current) => current?.id === updated.id ? updated : current)
+      void addressRecordService.getCounts().then(setCounts).catch((reason: unknown) => console.error(reason))
+    } catch (reason: unknown) {
+      console.error(reason)
+      throw new Error(reason instanceof DuplicateActiveAddressError
+        ? 'Bu ürünün bu adreste zaten aktif bir kaydı var.'
+        : 'Kaydedilemedi. Bağlantıyı kontrol edip tekrar deneyin.')
+    }
+  }
+
   const deleteRecord = async (record: AddressRecord) => {
     if (!window.confirm('Bu adres kaydı silinsin mi?')) return
     try {
@@ -230,14 +249,28 @@ export function AddressesPage({ initialSelectedRecordId = null }: AddressesPageP
       {!isLoading && !error && (
         <div className={`addresses-layout ${selectedRecord ? 'addresses-layout--detail-open' : ''}`}>
           <section className="addresses-table-panel" aria-label="Adres kayıtları">
-            <div className="addresses-table-caption"><span>{total === 0 ? '0 kayıt' : `${formatNumber(pageStart + 1)}-${formatNumber(pageStart + visibleRecords.length)} / ${formatNumber(total)} kayıt`}</span><span>Satıra tıklayın ya da ↑↓ ile gezip Enter'a basın</span></div>
+            <div className="addresses-table-caption"><span>{total === 0 ? '0 kayıt' : `${formatNumber(pageStart + 1)}-${formatNumber(pageStart + visibleRecords.length)} / ${formatNumber(total)} kayıt`}</span><span>Adres, koli veya durumu tıklayıp yerinde düzeltin · ayrıntı için satıra tıklayın</span></div>
             {total === 0 ? <p className="addresses-state">{counts.all === 0 ? 'Henüz adres kaydı bulunmuyor.' : 'Aramanızla eşleşen adres bulunamadı.'}</p> : (
               <>
               <div className="addresses-table-wrap">
                 <table className="addresses-table">
                   <thead><tr><th>Adres</th><th>Stok kodu</th><th>Stok adı</th><th>Koli</th><th>Durum</th><th>Güncellenme</th><th aria-label="Aksiyon" /></tr></thead>
                   <tbody>{visibleRecords.map((record) => <tr className={selectedRecord?.id === record.id ? 'addresses-row addresses-row--selected' : 'addresses-row'} key={record.id} onClick={() => { setSelectedRecord(record); closeForm() }} {...rowNavigationProps(() => { setSelectedRecord(record); closeForm() })}>
-                    <td><span className="address-cell"><MapPin size={14}/>{record.address}</span></td><td><strong>{record.stockCode}</strong></td><td className="address-product-name">{record.stockName}</td><td><strong className="carton-cell">{formatNumber(record.cartonCount)}</strong></td><td><StatusBadge isActive={record.isActive} /></td><td>{formatDate(record.updatedAt)}</td><td><button className="row-open" type="button" tabIndex={-1} aria-label={`${record.address} ayrıntısını aç`} onClick={(event) => { event.stopPropagation(); setSelectedRecord(record); closeForm() }}><ChevronRight size={16}/></button></td>
+                    <td>
+                      <InlineEdit kind="text" label="Adres" value={record.address} inputClassName="inline-edit-input--address"
+                        display={<span className="address-cell"><MapPin size={14}/>{record.address}</span>}
+                        validate={(value) => value.trim() ? null : 'Adres boş olamaz.'}
+                        onCommit={(value) => saveInline(record, { address: toStoredAddress(value) })} />
+                    </td><td><strong>{record.stockCode}</strong></td><td className="address-product-name">{record.stockName}</td><td>
+                      <InlineEdit kind="number" label="Koli adedi" value={String(record.cartonCount)} inputClassName="inline-edit-input--number"
+                        display={<strong className="carton-cell">{formatNumber(record.cartonCount)}</strong>}
+                        validate={(value) => Number.isInteger(Number(value)) && Number(value) >= 1 ? null : 'Koli 1 veya daha büyük tam sayı olmalı.'}
+                        onCommit={(value) => saveInline(record, { cartonCount: Number(value) })} />
+                    </td><td>
+                      <InlineEdit kind="select" label="Durum" value={String(record.isActive)} options={[['true', 'Aktif'], ['false', 'Pasif']]}
+                        display={<StatusBadge isActive={record.isActive} />}
+                        onCommit={(value) => saveInline(record, { isActive: value === 'true' })} />
+                    </td><td>{formatDate(record.updatedAt)}</td><td><button className="row-open" type="button" tabIndex={-1} aria-label={`${record.address} ayrıntısını aç`} onClick={(event) => { event.stopPropagation(); setSelectedRecord(record); closeForm() }}><ChevronRight size={16}/></button></td>
                   </tr>)}</tbody>
                 </table>
               </div>

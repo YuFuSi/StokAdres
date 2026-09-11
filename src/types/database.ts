@@ -505,6 +505,19 @@ export type Database = {
       }
       show_limit: { Args: never; Returns: number }
       show_trgm: { Args: { "": string }; Returns: string[] }
+      address_route_key: { Args: { p_address: string }; Returns: string }
+      list_addresses_in_range: {
+        Args: { p_from_key: string; p_to_key: string }
+        Returns: {
+          address: string
+          carton_count: number
+          id: string
+          product_id: string
+          route_key: string
+          stock_code: string
+          stock_name: string
+        }[]
+      }
       suggest_stock_codes: {
         Args: { p_codes: string[]; p_limit?: number }
         Returns: {

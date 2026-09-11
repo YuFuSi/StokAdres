@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
-import { Boxes, ChevronLeft, ClipboardList, History, Home, Import, MapPin, PackageSearch, Search, Settings, Upload, X } from 'lucide-react'
+import { Boxes, ChevronLeft, History, Home, Import, MapPin, PackageSearch, Printer, Search, Settings, Upload, X } from 'lucide-react'
 import { checkConnection, CONNECTION_CHECK_INTERVAL_MS, offlineReason, PAUSED_PROJECT_HINT, type ConnectionState } from '../services/connectionStatus'
 import { queryProducts, type ProductListItem } from '../services/productService'
 import { findActiveAddresses, type AddressLite } from '../services/productLookup'
@@ -19,11 +19,11 @@ type PaletteResults = { query: string; items: ProductListItem[]; addresses: Map<
 const EMPTY_RESULTS: PaletteResults = { query: '', items: [], addresses: new Map() }
 
 const navigationGroups: { label: string; items: NavItem[] }[] = [
-  { label: 'Operasyon', items: [{ id: 'dashboard', label: 'Genel Bakış', icon: Home }, { id: 'stocks', label: 'Stoklar', icon: Boxes }, { id: 'addresses', label: 'Adresler', icon: MapPin }, { id: 'find', label: 'Adres Bul', icon: PackageSearch }, { id: 'caba', label: 'CABA Listesi', icon: ClipboardList }] },
+  { label: 'Operasyon', items: [{ id: 'dashboard', label: 'Genel Bakış', icon: Home }, { id: 'stocks', label: 'Stoklar', icon: Boxes }, { id: 'addresses', label: 'Adresler', icon: MapPin }, { id: 'find', label: 'Adres Bul', icon: PackageSearch }, { id: 'caba', label: 'Çıktı Al', icon: Printer }] },
   { label: 'Veri', items: [{ id: 'import', label: 'İçe Aktar', icon: Import }, { id: 'export', label: 'Dışa Aktar', icon: Upload }] },
   { label: 'Sistem', items: [{ id: 'audit', label: 'İşlem Geçmişi', icon: History }, { id: 'settings', label: 'Ayarlar', icon: Settings }] },
 ]
-const commandItems: Array<{ label: string; page: AppPage; hint: string }> = [{ label: 'Stok ara', page: 'stocks', hint: 'Stok listesine git' }, { label: 'Adres ara', page: 'find', hint: 'Hızlı operasyon araması' }, { label: 'CABA listesi', page: 'caba', hint: 'Fiş yapıştır, adresleri bul' }, { label: 'Stok ekle', page: 'stocks', hint: 'Stoklar ekranını aç' }, { label: 'Excel içe aktar', page: 'import', hint: 'Veri içe aktarma' }, { label: 'Dışa aktar', page: 'export', hint: 'Veri dışa aktarma' }, { label: 'Ayarlar', page: 'settings', hint: 'Uygulama tercihleri' }]
+const commandItems: Array<{ label: string; page: AppPage; hint: string }> = [{ label: 'Stok ara', page: 'stocks', hint: 'Stok listesine git' }, { label: 'Adres ara', page: 'find', hint: 'Hızlı operasyon araması' }, { label: 'Çıktı al', page: 'caba', hint: 'CABA fişi, adres aralığı ya da seçili ürünler' }, { label: 'Stok ekle', page: 'stocks', hint: 'Stoklar ekranını aç' }, { label: 'Excel içe aktar', page: 'import', hint: 'Veri içe aktarma' }, { label: 'Dışa aktar', page: 'export', hint: 'Veri dışa aktarma' }, { label: 'Ayarlar', page: 'settings', hint: 'Uygulama tercihleri' }]
 
 const CONNECTION_LABEL: Record<ConnectionState, { title: string; detail: string }> = {
   checking: { title: 'Bağlantı denetleniyor', detail: 'Supabase yanıtı bekleniyor' },
