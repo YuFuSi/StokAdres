@@ -177,16 +177,23 @@ ikonları PNG kabul etmiyor ("invalid icon file" ile derleme durur).
 Script 16–256 arası 7 boyutu 32-bit BGRA DIB girdisi olarak yazar (PNG girdisi
 değil — NSIS'in eski ikon okuyucusu için).
 
-### 8b. `build:win` EPERM ile düşüyorsa: Windows Defender
+### 8b. `build:win` EPERM ile düşüyorsa: açık bir Vite dev sunucusu
 electron-builder Electron zip'ini `release/win-unpacked.tmp`'ye çıkarıp
-`win-unpacked`'e yeniden adlandırıyor. Defender gerçek zamanlı koruması yeni
-çıkarılmış `electron.exe`'yi tararken klasörü tutuyor → `EPERM: operation not
-permitted, rename`. 2026-09-11'de iki denemede de tekrarlandı; normal klasör
-yeniden adlandırma çalışıyordu.
-Çözüm `package.json` → `build.electronDist: "node_modules/electron/dist"`:
-`npm install`'un zaten indirdiği aynı sürüm Electron kullanılıyor, çıkarma ve
-yeniden adlandırma adımı hiç çalışmıyor. Defender'ı kapatma / istisna ekleme
-YOLUNA GİTME. ⚠️ `electron` paketinin sürümü değişirse bu klasör de onunla gelir.
+`win-unpacked`'e yeniden adlandırıyor → `EPERM: operation not permitted, rename`.
+2026-09-11'de iki denemede de tekrarlandı.
+**Kök sebep (Vite logundan):** Vite proje kökünü izliyordu, `release/` dahil.
+Build sırasında `release/win-unpacked.tmp/*` için sürekli "page reload" yazdı ve
+sonunda `release\win-unpacked\dxcompiler.dll` üzerinde **EBUSY** ile çöktü.
+İzleyicinin tuttuğu dosya kilitleri yeniden adlandırmayı engelliyordu. İlk
+teşhis "Windows Defender" idi; **doğrulanmadı**, Vite kanıtı bulununca geri
+çekildi.
+- Kalıcı düzeltme: `vite.config.ts` → `server.watch.ignored` ile `release/`,
+  `dist/`, `dist-electron/` izlenmiyor.
+- `package.json` → `build.electronDist: "node_modules/electron/dist"` da
+  duruyor: `npm install`'un indirdiği aynı sürüm Electron kopyalanıyor; her
+  build'de 100 MB indirme ve çıkarma adımı ortadan kalkıyor. ⚠️ `electron`
+  paketinin sürümü değişirse bu klasör de onunla gelir.
+- Defender'ı kapatma / istisna ekleme YOLUNA GİTME.
 
 Yan not: `npm run build:win 2>&1 | tail` gibi boru hattında çıkış kodu `tail`'in
 kodudur; build düşse de "exit 0" görünür. `set -o pipefail` kullan.
@@ -891,4 +898,24 @@ yorum satırlarıyla; en az 2 hafta silinmemeli, silme kararı kullanıcının.
 | Ekrana gelme | ~1,7 sn | **0,93 sn** |
 | Tam yedek | 219 sn | **64 sn** |
 
-**Bekleyen:** 10.3 (sürüm 1.1.0 + exe smoke testi).
+### Faz 10.3 — Sürüm 1.1.0 ve kurulum dosyası ✅
+`release/StokAdres Setup 1.1.0.exe` (111 MB, imzasız). Exe'ye gömülü Supabase
+adresi Frankfurt; `app.asar` içinde Tokyo ref'i yok.
+
+- İlk iki `build:win` EPERM ile düştü (Tuzak #8b). İlk teşhis Defender'dı;
+  Vite logu kök sebebin açık dev sunucusunun `release/`i izlemesi olduğunu
+  gösterdi, teşhis düzeltildi. `server.watch.ignored` eklendikten sonra
+  doğrulandı: Vite açıkken `release/`e dosya yazıp `dist/`i yeniden derleyince
+  logda tek bir "page reload" satırı çıkmadı (öncesinde her dosyada çıkıyordu).
+- **Paketlenmiş uygulamada CDP smoke testi:** konsol hatası 0, CSP ihlali 0;
+  istekler yalnızca `zxdojwbrttdarcgytzsi`; Ayarlar "Sürüm 1.1.0"; **gerçek
+  `save-backup` IPC'si** ilk kez uçtan uca çalıştı → 53 sn,
+  `Belgeler\StokAdres Yedekleri\StokAdres_yedek_2026-09-11_1334.xlsx` (32,1 MB,
+  satır sayıları doğru). CABA rota sırası exe'de de doğru.
+- **Yazdırma:** Paketlenmiş Electron CDP `Page.printToPDF` desteklemiyor; aynı
+  motorla (başsız Edge) dev sunucusundan PDF alındı ve görsel olarak incelendi:
+  "Sayfa 1 / 2" alt bilgisi, menü ve düğmeler gizli, işaretleme kutuları, koridor
+  başlıkları, 2. sayfada tekrarlanan tablo başlığı, bulunamayanlar en sonda.
+
+**Not:** Canlı veride test kaydına benzeyen bir ürün var: `zücc11111` / "iğne"
+(küçük harf kod, adresi yok). Dokunulmadı; kullanıcı karar verir.
