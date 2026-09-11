@@ -4,6 +4,11 @@ import path from 'node:path'
 
 const isDev = process.argv.includes('--dev')
 
+// Yedekler kullanıcıya diyalog açtırmadan hep aynı yere yazılır; klasör adı
+// burada sabit, renderer yol veremez.
+const backupDirectory = (): string => path.join(app.getPath('documents'), 'StokAdres Yedekleri')
+const BACKUP_FILE_NAME = /^StokAdres_yedek_\d{4}-\d{2}-\d{2}_\d{4}\.xlsx$/
+
 const createWindow = (): void => {
   const window = new BrowserWindow({
     width: 1200,
@@ -80,6 +85,27 @@ app.whenReady().then(() => {
     if (result.canceled || !result.filePath) return { canceled: true }
     await fs.writeFile(result.filePath, payload.content, payload.encoding)
     return { canceled: false, filePath: result.filePath }
+  })
+  ipcMain.handle('save-backup', async (_event, payload: { fileName: unknown; content: unknown }) => {
+    // Dosya adı renderer'dan geliyor: yol ayırıcısı ya da "..", yedek klasörünün
+    // dışına yazdırabilirdi. Yalnızca backupService'in ürettiği biçim kabul edilir.
+    if (typeof payload?.fileName !== 'string' || !BACKUP_FILE_NAME.test(payload.fileName)) {
+      throw new Error('Geçersiz yedek dosyası adı.')
+    }
+    if (typeof payload.content !== 'string' || payload.content.length === 0) {
+      throw new Error('Yedek içeriği boş.')
+    }
+    const directory = backupDirectory()
+    await fs.mkdir(directory, { recursive: true })
+    const filePath = path.join(directory, payload.fileName)
+    await fs.writeFile(filePath, payload.content, 'base64')
+    return { filePath }
+  })
+  ipcMain.handle('open-backup-folder', async () => {
+    const directory = backupDirectory()
+    await fs.mkdir(directory, { recursive: true })
+    const error = await shell.openPath(directory)
+    return { ok: error === '' }
   })
 
   createWindow()

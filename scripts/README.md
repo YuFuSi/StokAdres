@@ -100,3 +100,49 @@ analyze public.product_barcodes;
 ```
 
 Bu, arama index'lerinin (`pg_trgm`) 100k satırda doğru kullanılmasını sağlar.
+
+---
+
+## Yedekten kurtarma
+
+Uygulama **Ayarlar → Yedek Al** ile `Belgeler\StokAdres Yedekleri\` klasörüne
+tek bir Excel yazar. Uygulamada geri yükleme düğmesi **bilerek yok**: geri yükleme
+mevcut veriyi değiştiren bir işlem ve ancak gerçekten gerektiğinde, bilinçli
+yapılmalı.
+
+Yedek dosyasındaki sayfalar:
+
+| Sayfa | İçerik |
+|---|---|
+| `Bilgi` | Yedek tarihi ve satır sayıları |
+| `Stoklar` | `products` tablosunun tüm kolonları (`id` dahil) |
+| `Barkodlar` | `product_barcodes` + okunabilirlik için başta `stock_code` |
+| `Adresler` | `address_records` + okunabilirlik için başta `stock_code` |
+
+`id`'ler korunduğu için ürün, barkod ve adres ilişkileri yedekten birebir
+kurulabilir. `audit_logs` (işlem geçmişi) yedekte yok.
+
+### Önce: gerçekten veri mi kayboldu?
+
+Uygulama "Veritabanına ulaşılamıyor" diyorsa büyük olasılıkla **proje
+durdurulmuştur**. Ücretsiz Supabase projeleri 7 gün kullanılmayınca durur;
+veri silinmez. supabase.com → StokAdres projesi → **Restore**. Yedeğe gerek
+yoktur.
+
+### Gerçek veri kaybında
+
+1. Hedef projede şema hazır olmalı (`supabase/migrations/` sırayla).
+2. Yedek Excel'inden her sayfayı ayrı **CSV UTF-8** olarak kaydedin.
+   `Barkodlar` ve `Adresler` sayfalarında baştaki `stock_code` kolonunu silin;
+   tabloda böyle bir kolon yok.
+3. Supabase → Table Editor → tablo → **Import data from CSV**, şu sırayla
+   (yabancı anahtarlar yüzünden sıra önemli):
+   `products` → `product_barcodes` → `address_records`.
+4. Uygulamayı açıp Genel Bakış sayılarını yedeğin `Bilgi` sayfasıyla
+   karşılaştırın.
+
+> ⚠️ İçe aktarma sırasında audit trigger'ları her satır için bir işlem geçmişi
+> kaydı üretir. Bu zararsızdır ama İşlem Geçmişi ekranı kalabalıklaşır.
+>
+> Bu prosedür henüz bir tatbikatla uçtan uca denenmedi. Gerçek bir kayıpta önce
+> boş bir test projesinde denemek en güvenlisi.

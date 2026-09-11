@@ -307,6 +307,24 @@ export type Database = {
       }
     }
     Views: {
+      address_aisle_summary: {
+        Row: {
+          address_count: number | null
+          aisle: string | null
+          carton_count: number | null
+          product_count: number | null
+          rack_count: number | null
+        }
+        Relationships: []
+      }
+      address_daily_activity: {
+        Row: {
+          carton_count: number | null
+          created_count: number | null
+          day: string | null
+        }
+        Relationships: []
+      }
       address_record_counts: {
         Row: {
           active_cartons: number | null

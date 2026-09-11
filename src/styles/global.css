@@ -23,7 +23,9 @@
   --surface: #fff;
   --surface-muted: #f8f8f6;
   --ink: #1e2525;
-  --muted: #697372;
+  /* #697372 idi: sayfa zemininde 4,48:1 (AA altı). Faz 8'de ölçülüp bir tık
+   * koyulaştırıldı — sayfa 4,81 · yüzey 5,26 · teal-soft 4,65 · warning-soft 4,76. */
+  --muted: #646e6d;
   --line: #e2e5e1;
   --teal: #176d68;
   --teal-soft: #e9f3f1;
@@ -549,3 +551,31 @@ tr:hover > td > .row-open { color: var(--teal); opacity: 1; }
 .import-count--ready { border-color: var(--success-soft); }
 .import-count--update, .import-count--missing { border-color: var(--warning-soft); }
 .import-count--invalid { border-color: var(--danger-soft); }
+
+/* Faz 7 — Genel Bakış yedek hatırlatıcısı. Veritabanı ücretsiz planda, otomatik
+ * yedek yok; 7 günden eski (ya da hiç alınmamış) yedekte görünür. */
+.backup-reminder { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-top: 20px; padding: 11px 16px; color: var(--ink); background: var(--warning-soft); border: 1px solid var(--warning-soft); border-radius: 6px; font-size: 12px; line-height: 1.5; }
+.backup-reminder strong { color: var(--warning); }
+.backup-reminder .text-action { flex: 0 0 auto; }
+
+/* Faz 8 — Genel Bakış: sayım ilerlemesi ve son 14 gün. Kütüphane yok; çubuklar
+ * düz CSS, renkler token (Tuzak #10). */
+.dashboard-insights { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); gap: 32px; margin-top: 36px; }
+.dashboard-panel { min-width: 0; }
+.dashboard-panel .section-heading { margin-bottom: 14px; }
+.progress-track { height: 8px; overflow: hidden; background: var(--surface-muted); border: 1px solid var(--line); border-radius: 999px; }
+.progress-track > span { display: block; height: 100%; background: var(--teal); border-radius: inherit; }
+.dashboard-progress__caption { margin: 8px 0 18px; color: var(--muted); font-size: 12px; }
+.dashboard-progress__caption strong { color: var(--ink); }
+.aisle-bars { display: grid; gap: 7px; margin: 0; padding: 0; list-style: none; }
+.aisle-bars li { display: grid; grid-template-columns: 18px minmax(0, 1fr) minmax(140px, auto); align-items: center; gap: 10px; font-size: 12px; }
+.aisle-bars__label { color: var(--ink); font: 600 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
+.aisle-bars__track { height: 10px; overflow: hidden; background: var(--surface-muted); border-radius: 3px; }
+.aisle-bars__track > span { display: block; height: 100%; background: var(--teal); border-radius: 3px; }
+.aisle-bars__value { color: var(--muted); font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+.activity-chart { display: grid; grid-template-columns: repeat(14, minmax(0, 1fr)); gap: 6px; height: 180px; }
+.activity-chart__day { display: flex; min-width: 0; flex-direction: column; align-items: center; gap: 6px; }
+.activity-chart__plot { display: flex; width: 100%; flex: 1; align-items: flex-end; justify-content: center; border-bottom: 1px solid var(--line); }
+.activity-chart__bar { width: 100%; max-width: 22px; background: var(--teal); border-radius: 3px 3px 0 0; }
+.activity-chart__day small { color: var(--muted); font-size: 10px; font-variant-numeric: tabular-nums; }
+@media (max-width: 900px) { .dashboard-insights { grid-template-columns: 1fr; } }

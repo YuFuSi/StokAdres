@@ -44,3 +44,21 @@
  * kuralı eziyor.) */
 .operation-state { min-height: 132px; background: transparent; border-style: dashed; border-color: var(--line); }
 .operation-state p { max-width: 44ch; text-align: center; line-height: 1.55; }
+
+/* Faz 7 — Ayarlar > Yedek. Kartların altındaki boşluğu gerçek bir işle
+ * dolduruyor (bkz. services/backupService.ts). */
+.settings-backup { display: flex; align-items: center; justify-content: space-between; gap: 24px; margin-top: 16px; padding: 20px; background: var(--paper); border: 1px solid var(--line); border-radius: 6px; }
+.settings-backup h2 { margin: 0; font-size: 18px; }
+.settings-backup p { max-width: 68ch; margin: 6px 0 10px; color: var(--muted); font-size: 13px; line-height: 1.5; }
+.settings-backup p strong { color: var(--ink); font-weight: 600; }
+.settings-backup .settings-value { white-space: normal; }
+.settings-backup__actions { display: flex; flex: 0 0 auto; gap: 8px; }
+/* `.settings-cards p` rengi ve min-height'ı eziyor; özgüllük bilerek yüksek. */
+.settings-cards .settings-warning { min-height: 0; margin: 10px 0 0; color: var(--warning); font-size: 12px; line-height: 1.5; }
+@media (max-width: 720px) { .settings-backup { align-items: stretch; flex-direction: column; } }
+
+/* Faz 8 — Adres Bul boş durumunda son aramalar (lib/recentSearches.ts). */
+.finder-recent { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 6px; max-width: 72ch; padding: 0 16px; }
+.finder-recent > span { margin-right: 4px; color: var(--muted); font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+.finder-recent__item { padding: 4px 9px; color: var(--ink); background: var(--surface-muted); border: 1px solid var(--line); border-radius: 4px; font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; cursor: pointer; }
+.finder-recent__item:hover, .finder-recent__item:focus-visible { color: var(--teal); border-color: var(--teal); }

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Boxes, ChevronLeft, ClipboardList, History, Home, Import, MapPin, PackageSearch, Search, Settings, Upload, X } from 'lucide-react'
-import { checkConnection, CONNECTION_CHECK_INTERVAL_MS, type ConnectionState } from '../services/connectionStatus'
+import { checkConnection, CONNECTION_CHECK_INTERVAL_MS, offlineReason, PAUSED_PROJECT_HINT, type ConnectionState } from '../services/connectionStatus'
 import { queryProducts, type ProductListItem } from '../services/productService'
 import { findActiveAddresses, type AddressLite } from '../services/productLookup'
 
@@ -28,8 +28,12 @@ const commandItems: Array<{ label: string; page: AppPage; hint: string }> = [{ l
 const CONNECTION_LABEL: Record<ConnectionState, { title: string; detail: string }> = {
   checking: { title: 'Bağlantı denetleniyor', detail: 'Supabase yanıtı bekleniyor' },
   online: { title: 'Sistem çevrimiçi', detail: 'Supabase bağlantısı aktif' },
-  offline: { title: 'Bağlantı yok', detail: "Supabase'e ulaşılamıyor" },
+  offline: { title: 'Veritabanına ulaşılamıyor', detail: 'Ayrıntı için Ayarlar' },
 }
+// Çevrimdışının iki farklı sebebi var ve kullanıcıyı farklı yere baktırıyor:
+// internet yoksa bilgisayara, internet varken veritabanı yanıt vermiyorsa
+// (ücretsiz proje durdurulmuş olabilir) Supabase'e.
+const NO_INTERNET_LABEL = { title: 'İnternet yok', detail: 'Bilgisayarın bağlantısını kontrol edin' }
 
 export function AppLayout({ children, activePage, onNavigate, onProductSelect }: AppLayoutProps) {
   const [connection, setConnection] = useState<ConnectionState>('checking')
@@ -46,6 +50,8 @@ export function AppLayout({ children, activePage, onNavigate, onProductSelect }:
     .find((entry) => entry.item.id === activePage)
   const activeLabel = activeEntry?.item.label ?? 'StokAdres'
   const activeGroup = activeEntry?.group ?? 'StokAdres'
+  const isNoInternet = connection === 'offline' && offlineReason() === 'no-internet'
+  const connectionLabel = isNoInternet ? NO_INTERNET_LABEL : CONNECTION_LABEL[connection]
   const visibleCommands = useMemo(() => commandItems.filter((item) => item.label.toLocaleLowerCase('tr-TR').includes(query.toLocaleLowerCase('tr-TR'))), [query])
 
   // Gösterge bir şey iddia ediyorsa doğrulanmış olmalı: periyodik ve pencere
@@ -57,7 +63,10 @@ export function AppLayout({ children, activePage, onNavigate, onProductSelect }:
     run()
     const timer = window.setInterval(run, CONNECTION_CHECK_INTERVAL_MS)
     window.addEventListener('focus', run)
-    return () => { cancelled = true; window.clearInterval(timer); window.removeEventListener('focus', run) }
+    // İnternet gidip geldiğinde bir sonraki 60 sn'lik turu beklemeden denetle.
+    window.addEventListener('online', run)
+    window.addEventListener('offline', run)
+    return () => { cancelled = true; window.clearInterval(timer); window.removeEventListener('focus', run); window.removeEventListener('online', run); window.removeEventListener('offline', run) }
   }, [])
 
   // Palet stok araması sunucuda (`search_products`). Eskiden palet açıldığında
@@ -115,7 +124,7 @@ export function AppLayout({ children, activePage, onNavigate, onProductSelect }:
   const hasQuery = trimmedQuery.length > 0
   const hasNoResults = hasQuery && resultsAreCurrent && !isSearching && stockResults.length === 0 && visibleCommands.length === 0 && !searchError
 
-  return <div className={`app-shell ${collapsed ? 'app-shell--collapsed' : ''}`}><aside className="app-sidebar"><div className="sidebar-brand"><span className="brand__mark">SA</span><span className="sidebar-brand__words"><span className="brand__name">StokAdres</span><small className="brand__context">Depo Yönetimi</small></span><button className="sidebar-collapse" type="button" onClick={() => setCollapsed((value) => !value)} title={collapsed ? 'Menüyü genişlet' : 'Menüyü daralt'}><ChevronLeft size={16}/></button></div><nav className="sidebar-nav" aria-label="Ana navigasyon">{navigationGroups.map((group) => <div className="sidebar-group" key={group.label}><span className="sidebar-group__label">{group.label}</span>{group.items.map((item) => { const Icon = item.icon; return <button title={collapsed ? item.label : undefined} className={`sidebar-link ${activePage === item.id ? 'sidebar-link--active' : ''}`} key={item.id} type="button" onClick={() => navigate(item.id)} aria-current={activePage === item.id ? 'page' : undefined}><Icon size={16} strokeWidth={1.75} /><span>{item.label}</span></button> })}</div>)}</nav><div className="sidebar-footer"><span className={`status-dot status-dot--${connection}`} /><span><strong>{CONNECTION_LABEL[connection].title}</strong><small>{CONNECTION_LABEL[connection].detail}</small></span></div></aside><div className="app-shell__main"><header className="application-bar"><nav className="application-bar__crumb" aria-label="Konum"><span>{activeGroup}</span><i aria-hidden="true">/</i><strong>{activeLabel}</strong></nav><button className="command-trigger" type="button" onClick={() => setIsCommandOpen(true)}><Search size={15} /><span>Stok, barkod veya adres ara</span><kbd>Ctrl K</kbd></button></header>{children}</div>{isCommandOpen && <div className="command-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setIsCommandOpen(false) }}><section className="command-palette" role="dialog" aria-modal="true" aria-label="Hızlı komutlar"><div className="command-palette__input"><Search size={18} /><input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key !== 'Enter') return; event.preventDefault(); if (hasQuery && !resultsAreCurrent) return; if (stockResults[0]) openProduct(stockResults[0].id); else if (visibleCommands[0]) runCommand(visibleCommands[0]) }} placeholder="Stok kodu, stok adı, barkod veya adres ara..." /><button type="button" onClick={() => setIsCommandOpen(false)} aria-label="Komut paletini kapat"><X size={17} /></button></div><div className="command-palette__list">
+  return <div className={`app-shell ${collapsed ? 'app-shell--collapsed' : ''}`}><aside className="app-sidebar"><div className="sidebar-brand"><span className="brand__mark">SA</span><span className="sidebar-brand__words"><span className="brand__name">StokAdres</span><small className="brand__context">Depo Yönetimi</small></span><button className="sidebar-collapse" type="button" onClick={() => setCollapsed((value) => !value)} title={collapsed ? 'Menüyü genişlet' : 'Menüyü daralt'}><ChevronLeft size={16}/></button></div><nav className="sidebar-nav" aria-label="Ana navigasyon">{navigationGroups.map((group) => <div className="sidebar-group" key={group.label}><span className="sidebar-group__label">{group.label}</span>{group.items.map((item) => { const Icon = item.icon; return <button title={collapsed ? item.label : undefined} className={`sidebar-link ${activePage === item.id ? 'sidebar-link--active' : ''}`} key={item.id} type="button" onClick={() => navigate(item.id)} aria-current={activePage === item.id ? 'page' : undefined}><Icon size={16} strokeWidth={1.75} /><span>{item.label}</span></button> })}</div>)}</nav><div className="sidebar-footer" title={connection === 'offline' && !isNoInternet ? PAUSED_PROJECT_HINT : undefined}><span className={`status-dot status-dot--${connection}`} /><span><strong>{connectionLabel.title}</strong><small>{connectionLabel.detail}</small></span></div></aside><div className="app-shell__main"><header className="application-bar"><nav className="application-bar__crumb" aria-label="Konum"><span>{activeGroup}</span><i aria-hidden="true">/</i><strong>{activeLabel}</strong></nav><button className="command-trigger" type="button" onClick={() => setIsCommandOpen(true)}><Search size={15} /><span>Stok, barkod veya adres ara</span><kbd>Ctrl K</kbd></button></header>{children}</div>{isCommandOpen && <div className="command-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setIsCommandOpen(false) }}><section className="command-palette" role="dialog" aria-modal="true" aria-label="Hızlı komutlar"><div className="command-palette__input"><Search size={18} /><input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key !== 'Enter') return; event.preventDefault(); if (hasQuery && !resultsAreCurrent) return; if (stockResults[0]) openProduct(stockResults[0].id); else if (visibleCommands[0]) runCommand(visibleCommands[0]) }} placeholder="Stok kodu, stok adı, barkod veya adres ara..." /><button type="button" onClick={() => setIsCommandOpen(false)} aria-label="Komut paletini kapat"><X size={17} /></button></div><div className="command-palette__list">
 
     {hasQuery && stockResults.length > 0 && <>
       <p className="command-palette__group">Stoklar</p>
