@@ -13,7 +13,8 @@ uygulaması**. Kullanıcı: Harun abi (depo operasyonu). Arayüz tamamen Türkç
 
 **Stack:** Electron 44 + React 19 + TypeScript 7 + Vite 8 + Vitest + Supabase (Postgres 17.6)
 **Repo:** https://github.com/YuFuSi/StokAdres · branch `main`
-**Supabase proje ref:** `ryuguxxnmccybquqigji` (region ap-northeast-1)
+**Supabase proje ref:** `zxdojwbrttdarcgytzsi` — **StokAdres-EU**, eu-central-1 (Frankfurt), 2026-09-11'den beri aktif
+**Eski proje:** `ryuguxxnmccybquqigji` (StokAdres, Tokyo) — taşıma kaynağı, geri dönüş için dokunulmadan duruyor. Yeni migration'ları ona UYGULAMA.
 
 Önemli kavram: **ürünün "stok adedi" alanı yoktur.** Miktar yalnızca adres
 kayıtlarındaki `carton_count` (koli) toplamından türetilir. Yani bu bir
@@ -63,7 +64,7 @@ src/services/backupService.ts  Tek tıkla tam yedek → Belgeler\StokAdres Yedek
 src/services/*.test.ts    Vitest testleri
 src/data/localData.ts     addressRecordService singleton'ı burada
 scripts/bulk-load-products.mjs  Toplu ürün yükleme + yedekten kurtarma (README yanında)
-supabase/migrations/      19 dosya — adları schema_migrations ile birebir (Tuzak #14)
+supabase/migrations/      21 dosya — adları schema_migrations ile birebir (Tuzak #14)
 .github/workflows/ci.yml  typecheck + test + build
 ```
 
@@ -206,7 +207,7 @@ Supabase import eden modüllerden ayrı tutmak daha temiz olur.
 
 ### 12. `src/types/database.ts` otomatik üretilir
 Şema değişince yenilenmeli: `generate_typescript_types` (Supabase MCP) veya
-`supabase gen types typescript --project-id ryuguxxnmccybquqigji`.
+`supabase gen types typescript --project-id zxdojwbrttdarcgytzsi`.
 Üreteç CHECK constraint'lerini ifade edemez (`conflict_type: string` gelir);
 daraltma mapping fonksiyonlarında yapılır. Varsayılansız fonksiyon
 parametrelerini de NOT NULL üretir. `suggest_stock_codes` ile iki dashboard
@@ -244,9 +245,11 @@ tanımsız. Migration'ın başına `select public.show_limit();` koymak yeterli
 
 ## Canlı Database Şeması
 
-Şema `supabase/migrations/` içinde **tam olarak** mevcut ve 19 migration'ın
-tamamı canlıya uygulanmış (`schema_migrations` 19 satır, versiyonlar dosya
-adlarıyla birebir eşleşiyor — 2026-09-11 `list_migrations` ile doğrulandı).
+Şema `supabase/migrations/` içinde **tam olarak** mevcut ve 21 migration'ın
+tamamı canlıya (Frankfurt) uygulanmış (`schema_migrations` 21 satır, versiyonlar
+dosya adlarıyla birebir — 2026-09-11 `list_migrations` ile doğrulandı). Tokyo'da
+20 satır: son migration (`20260911102221`) yalnızca taşımanın ürettiği yetki
+açığını kapatıyor, Tokyo'da zaten gerekmiyordu.
 
 **Plan: Supabase FREE** (2026-09-11, `get_organization`). Otomatik yedek yok,
 7 gün kullanılmayan proje durdurulur, veritabanı sınırı 500 MB. Toplam boyut
@@ -339,7 +342,7 @@ address_conflicts   → address_conflicts_audit_trigger
 | 6 | 🟡 | `pg_trgm` public şemada (Supabase linter). Taşımak 95k satırda GIN index'leri yeniden kurmayı gerektirir; bilinçli bırakıldı |
 | 7 | 🟢 | Installer imzasız (ikon eklendi, `680c0fd`) |
 | 8 | 🟡 | **Supabase FREE plan** — otomatik yedek yok, 7 günde durdurma. Faz 7'nin yedeği ve hatırlatıcısı riski azaltıyor, kaldırmıyor; kalıcı çözüm Pro ($25/ay), kullanıcının kararı |
-| 9 | 🟡 | Tokyo bölgesi: her istek ~300 ms taban gecikme, yedek 219 sn sürüyor. Faz 9'da Frankfurt'a taşıma planlandı |
+| 9 | ✅ | ~~Tokyo bölgesi gecikmesi~~ — 2026-09-11 Frankfurt'a taşındı (arama 1.009 → 312 ms, yedek 219 → 64 sn) |
 
 ---
 
@@ -826,14 +829,52 @@ değişmeden `security_invoker = true` yapıldı. Doğrulandı: advisor 3 → 1
 **Yeni view yazarken `with (security_invoker = true)` unutma** — `create or
 replace view` bu seçeneği korumaz, yeniden belirtmek gerekir.
 
-### Faz 9 — Frankfurt taşıma (engellendi)
-- Taşıma öncesi ölçüm (Tokyo, Adres Bul, 6 sorgu): `search_products` medyan
-  **1.009 ms**, adres sorgusu 417 ms, ekrana gelme 1,1–2,6 sn.
-- Maliyet 0 $/ay onaylandı; `create_project` reddedildi: hesap sahibinin
-  **ücretsiz aktif proje sınırı (2) dolu** — ikinci aktif proje bu MCP'nin
-  göremediği başka bir organizasyonda. Karar kullanıcıda.
-- Yerelde `pg_dump` / `psql` / Supabase CLI / Docker yok. winget paketi:
-  `PostgreSQL.PostgreSQL.17` (17.11).
+### Faz 9 — Frankfurt'a taşıma ✅
+Yeni proje **StokAdres-EU** (`zxdojwbrttdarcgytzsi`, eu-central-1, FREE, 0 $/ay).
+Tokyo (`ryuguxxnmccybquqigji`) **dokunulmadan duruyor** — geri dönüş `.env`'deki
+yorum satırlarıyla; en az 2 hafta silinmemeli, silme kararı kullanıcının.
 
-**Bekleyen:** Faz 9 (Frankfurt taşıma — kullanıcı onayı ve kullanıcının kendi
-terminalinde DB şifresi gerekiyor) · 10.3 (sürüm 1.1.0 + exe).
+**Nasıl yapıldı** (şifreler hiçbir aşamada Claude'a geçmedi):
+1. İlk `create_project` "ücretsiz aktif proje sınırı (2)" ile reddedildi;
+   kullanıcı başka bir organizasyondaki projesini duraklattı.
+2. Kullanıcı `winget install PostgreSQL.PostgreSQL.17` ile yalnızca komut satırı
+   araçlarını kurdu (sunucu bileşeni kapalı).
+3. Doğrudan DB adresleri **yalnızca IPv6**, bu bilgisayarda IPv6 yok → Session
+   pooler: `aws-0-<bölge>.pooler.supabase.com:5432`, kullanıcı
+   `postgres.<ref>`. Doğru havuz (`aws-0` mı `aws-1` mi) şifresiz `psql -w`
+   yoklamasıyla bulundu: yanlış havuz "tenant not found", doğrusu
+   "no password supplied" döner.
+4. Kullanıcı kendi terminalinde `pg_dump --schema public --schema
+   supabase_migrations --no-owner` (Masaüstü\StokAdres-tasima\ script'leri).
+5. Kopya Supabase'e olduğu gibi yüklenemez; 4 yama: `CREATE SCHEMA public` →
+   `IF NOT EXISTS`, `COMMENT ON SCHEMA public` silindi, 12 × `ALTER DEFAULT
+   PRIVILEGES FOR ROLE supabase_admin` silindi, `pg_trgm` + `show_limit()`
+   eklendi (Tuzak #15). Sona `ANALYZE`. Yükleme `--single-transaction`,
+   `ON_ERROR_STOP` — ilk deneme yanlış şifreyle hiçbir şey yazmadan düştü.
+
+**Doğrulama:**
+- Beş tablonun satır **içerik** özetleri (md5) iki projede birebir; Türkçe
+  karakter/kodlama bozulması yok.
+- Tablo, view, index, politika, tetikleyici, kısıt ve tablo yetkisi parmak
+  izleri birebir.
+- 🔴→✅ **Taşımanın kendisi bir güvenlik açığı üretti:** yeni projede 9 SECURITY
+  DEFINER fonksiyon (yıkıcı `clear_address_records`/`restore_address_records`
+  dahil) anon tarafından çağrılabilir durumdaydı. Sebep: Supabase'in varsayılan
+  yetkileri fonksiyon oluşturulurken anon'a EXECUTE veriyor, pg_dump ise ACL'i
+  PostgreSQL'in kendi varsayılanına göre yazdığı için geri almıyor.
+  `20260911102221_revoke_definer_function_grants_after_move` ile kapatıldı
+  (Tokyo'daki durumla aynı; EXECUTE yetki listesi özeti birebir, advisor yalnızca
+  `pg_trgm`). **Bir sonraki taşımada bunu ilk kontrol et.**
+- 7 eski fonksiyonun tanım özeti farklı çıktı; `\r` çıkarılınca birebir aynı
+  (Tokyo'dakiler Windows'tan `\r\n` ile girilmişti). Davranış farkı yok.
+
+**Ölçüm (aynı 6 Adres Bul sorgusu, medyan):**
+
+| | Tokyo | Frankfurt |
+|---|---|---|
+| `search_products` | 1.009 ms | **312 ms** |
+| Adres sorgusu | 417 ms | **170 ms** |
+| Ekrana gelme | ~1,7 sn | **0,93 sn** |
+| Tam yedek | 219 sn | **64 sn** |
+
+**Bekleyen:** 10.3 (sürüm 1.1.0 + exe smoke testi).

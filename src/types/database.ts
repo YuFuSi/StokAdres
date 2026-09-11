@@ -1,8 +1,10 @@
 // OTOMATIK URETILDI - ELLE DUZENLEMEYIN
 //
-// Kaynak: Supabase projesi ryuguxxnmccybquqigji, 2026-09-10
+// Kaynak: Supabase projesi ryuguxxnmccybquqigji (Tokyo), 2026-09-10.
+// 2026-09-11'den beri aktif proje zxdojwbrttdarcgytzsi (Frankfurt); sema
+// tasimada birebir kopyalandi ve dogrulandi.
 // Yeniden uretmek icin: Supabase MCP `generate_typescript_types`
-// veya: supabase gen types typescript --project-id ryuguxxnmccybquqigji
+// veya: supabase gen types typescript --project-id zxdojwbrttdarcgytzsi
 //
 // Sema degistiginde (yeni migration) bu dosya da yenilenmelidir.
 //
