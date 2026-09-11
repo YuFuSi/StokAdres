@@ -166,6 +166,10 @@
   .caba-checkbox { display: inline-block; width: 12px; height: 12px; border: 1.5px solid #000; border-radius: 2px; vertical-align: middle; }
   .caba-split { color: #444; }
 
+  /* "Adresi bulunamayanlar" başlığı sayfanın dibinde tablosuz kalmasın
+     (ilk PDF'te 1. sayfada başlık, 2. sayfada tablo çıktı). */
+  .caba-misses h2, .caba-misses__hint { break-after: avoid; }
+
   /* Ürüne göre: bir ürünün adresleri sayfa sonunda bölünmesin. */
   .caba-product { break-inside: avoid; }
   .caba-table--products .caba-row--first td { border-top: 1px solid #999; }

@@ -108,7 +108,7 @@ function ExportHub() {
     <section className="export-flow">
       <Choice step="01" title="Veri" value={datasets[0] ?? ''} onChange={value => format === 'csv' ? setDatasets([value as ExportDataset]) : toggle(value as ExportDataset)} options={[['stocks', 'Stoklar'], ['addresses', 'Adresler'], ['stock-address', 'Stok + Adres'], ['summary', 'Özet']]} />
       {format === 'xlsx' && <p className="export-hint">Excel için birden çok veri kümesini seçebilirsiniz.</p>}
-      {datasets.includes('stocks') && <p className="export-hint">Stoklar kümesi ~95.000 satır; hazırlanması biraz sürer.</p>}
+      {datasets.includes('stocks') && <p className="export-hint">Stoklar kümesi tüm ürün kartlarını içerir; hazırlanması biraz sürer.{format === 'xlsx' ? ' Yüz binlerce satırda Excel dosyası bir dakikaya yakın sürer ve bilgisayarı yorar — bu boyutta CSV seçin.' : ''}</p>}
       <Choice step="02" title="Format" value={format} onChange={value => { setFormat(value as 'csv' | 'xlsx'); if (value === 'csv' && datasets.length > 1) setDatasets([datasets[0]]) }} options={[['csv', 'CSV'], ['xlsx', 'Excel (.xlsx)']]} />
       <div className="export-action">
         <p role={isExporting ? 'status' : undefined}>{progress || message || 'CSV tek veri kümesi, Excel seçili veri kümeleri için ayrı worksheet oluşturur.'}</p>
@@ -323,8 +323,8 @@ function Settings() {
       <div>
         <h2 id="settings-backup-title">Yedek</h2>
         <p>
-          Veritabanının ücretsiz planı otomatik yedek tutmuyor. Stoklar, barkodlar ve adres kayıtları tek bir Excel dosyasına yazılır
-          {canOpenBackupFolder() ? <> ve <strong>Belgeler › StokAdres Yedekleri</strong> klasörüne kaydedilir</> : null}. Eski yedekler silinmez.
+          Veritabanının ücretsiz planı otomatik yedek tutmuyor. Stoklar, barkodlar ve adres kayıtları tarihli bir klasöre CSV dosyaları olarak yazılır
+          {canOpenBackupFolder() ? <> (<strong>Belgeler › StokAdres Yedekleri</strong>)</> : null}. Bu dosyalar veritabanına doğrudan geri yüklenebilir; eski yedekler silinmez.
         </p>
         <span className="settings-value" role={isBackingUp ? 'status' : undefined}>
           {backupProgress || backupMessage || (lastBackup ? `Son yedek: ${formatDateTime(lastBackup.at)}` : 'Henüz yedek alınmadı.')}

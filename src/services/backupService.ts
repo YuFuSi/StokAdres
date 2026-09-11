@@ -1,24 +1,26 @@
-import * as XLSX from 'xlsx'
 import { supabase } from '../lib/supabase'
 import { fetchAllRows } from '../lib/pagination'
 import { getLocalStorage } from '../data/localStorage'
+import { createCsvFromRows } from './csvExport'
 
 // Tek tıkla tam yedek.
 //
 // Neden gerekli: veritabanı Supabase'in ÜCRETSİZ planında (2026-09-11,
 // get_organization → plan: free). Bu planda otomatik yedek yok ve proje 7 gün
-// kullanılmazsa durduruluyor. Bir şey ters giderse elde kalan tek kopya bu
-// dosya.
+// kullanılmazsa durduruluyor. Bir şey ters giderse elde kalan tek kopya bu.
+//
+// Biçim CSV, Excel DEĞİL (2026-09-11 ölçümü, 300 bin ürün = 680 bin satır):
+// Excel dosyası 61 sn ve 2,4 GB bellek; uygulama penceresi donuyor. CSV 1 sn.
+// Ayrıca CSV'ler Supabase'e doğrudan geri yüklenebiliyor (scripts/README.md).
 //
 // Stoklar, barkodlar ve adres kayıtları TÜM kolonlarıyla yazılır (id'ler dahil;
-// geri yüklemede ilişkiler bunlarla kurulur). audit_logs dahil değil: 200k
-// satır ve geri yükleme için gerekmiyor.
-//
-// Uygulama içinde geri yükleme YOK — yıkıcı bir işlem. Kurtarma prosedürü
-// scripts/README.md'de.
+// geri yüklemede ilişkiler bunlarla kurulur). audit_logs dahil değil.
+// Uygulama içinde geri yükleme YOK — yıkıcı bir işlem.
+
+export type BackupFile = { name: 'bilgi.txt' | 'stoklar.csv' | 'barkodlar.csv' | 'adresler.csv'; content: string }
 
 type ElectronBackupApi = {
-  saveBackup?: (fileName: string, content: string) => Promise<{ filePath: string }>
+  saveBackup?: (folderName: string, files: BackupFile[]) => Promise<{ folderPath: string }>
   openBackupFolder?: () => Promise<{ ok: boolean }>
 }
 
@@ -28,7 +30,7 @@ export type BackupSummary = {
   products: number
   barcodes: number
   addresses: number
-  /** Electron dışında (tarayıcıda) dosya indirilir, yol bilinmez. */
+  /** Yedek klasörü. Electron dışında (tarayıcıda) dosyalar indirilir, yol bilinmez. */
   filePath: string | null
 }
 
@@ -69,6 +71,17 @@ export async function openBackupFolder(): Promise<void> {
   await electronApi()?.openBackupFolder?.()
 }
 
+/**
+ * Supabase satırını CSV hücrelerine çevirir: null boş hücre, jsonb metin.
+ * BOM eklenmez — Supabase'in CSV içe aktarması ilk başlığı "﻿id" okurdu.
+ */
+function toCsv(rows: Array<Record<string, unknown>>): string {
+  return createCsvFromRows(rows.map((row) => Object.fromEntries(Object.entries(row).map(([key, value]) => [
+    key,
+    value === null || value === undefined ? '' : typeof value === 'object' ? JSON.stringify(value) : String(value),
+  ]))))
+}
+
 export async function createBackup(onProgress?: (message: string) => void): Promise<BackupSummary> {
   const count = (value: number) => value.toLocaleString('tr-TR')
 
@@ -90,41 +103,44 @@ export async function createBackup(onProgress?: (message: string) => void): Prom
     (loaded) => onProgress?.(`Adresler okunuyor… ${count(loaded)}`),
   )
 
-  onProgress?.('Dosya hazırlanıyor…')
-  // Durum metninin ekrana çizilmesine fırsat ver: çalışma kitabı üretimi
-  // ~200k satırda ana iş parçacığını birkaç saniye meşgul ediyor.
+  onProgress?.('Dosyalar yazılıyor…')
   await new Promise((resolve) => setTimeout(resolve, 50))
 
-  // Barkod ve adres sayfalarında stok kodu ilk kolon: dosya elle okunduğunda
-  // uuid'lerden ürün bulmak zorunda kalınmasın.
-  const stockCodeById = new Map(products.map((product) => [product.id, product.stock_code]))
-  const withStockCode = <Row extends { product_id: string }>(rows: Row[]) =>
-    rows.map((row) => ({ stock_code: stockCodeById.get(row.product_id) ?? '', ...row }))
-
   const createdAt = new Date()
-  const workbook = XLSX.utils.book_new()
-  XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet([{
-    'Yedek tarihi': createdAt.toLocaleString('tr-TR'),
-    Stoklar: products.length,
-    Barkodlar: barcodes.length,
-    Adresler: addresses.length,
-    Not: 'Geri yükleme: scripts/README.md → Yedekten kurtarma',
-  }]), 'Bilgi')
-  XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(products), 'Stoklar')
-  XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(withStockCode(barcodes)), 'Barkodlar')
-  XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(withStockCode(addresses)), 'Adresler')
-  const content = XLSX.write(workbook, { type: 'base64', bookType: 'xlsx', compression: true })
+  const folderName = `StokAdres_yedek_${fileStamp(createdAt)}`
+  const files: BackupFile[] = [
+    {
+      name: 'bilgi.txt',
+      content: [
+        'StokAdres yedeği',
+        `Tarih: ${createdAt.toLocaleString('tr-TR')}`,
+        '',
+        `stoklar.csv    products          ${products.length} satır`,
+        `barkodlar.csv  product_barcodes  ${barcodes.length} satır`,
+        `adresler.csv   address_records   ${addresses.length} satır`,
+        '',
+        'Geri yükleme: scripts/README.md → "Yedekten kurtarma".',
+        'Sıra önemli: stoklar → barkodlar → adresler.',
+      ].join('\r\n'),
+    },
+    { name: 'stoklar.csv', content: toCsv(products) },
+    { name: 'barkodlar.csv', content: toCsv(barcodes) },
+    { name: 'adresler.csv', content: toCsv(addresses) },
+  ]
 
-  const fileName = `StokAdres_yedek_${fileStamp(createdAt)}.xlsx`
   let filePath: string | null = null
   const api = electronApi()
   if (api?.saveBackup) {
-    filePath = (await api.saveBackup(fileName, content)).filePath
+    filePath = (await api.saveBackup(folderName, files)).folderPath
   } else {
-    const link = document.createElement('a')
-    link.href = `data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,${content}`
-    link.download = fileName
-    link.click()
+    for (const file of files) {
+      const url = URL.createObjectURL(new Blob([file.content], { type: file.name.endsWith('.csv') ? 'text/csv;charset=utf-8' : 'text/plain;charset=utf-8' }))
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `${folderName}_${file.name}`
+      link.click()
+      URL.revokeObjectURL(url)
+    }
   }
 
   const summary: BackupSummary = { products: products.length, barcodes: barcodes.length, addresses: addresses.length, filePath }

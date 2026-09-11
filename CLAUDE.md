@@ -57,14 +57,17 @@ src/lib/addressFormat.ts  SAF · adres biçimi: parse, normalize (h21-1 → H21-
 src/lib/pickList.ts       SAF · CABA sonucu → koridor gruplu toplama listesi
 src/lib/stockCodeVariants.ts  SAF · Gemini okuma hataları için stok kodu adayları
 src/lib/rowNavigation.ts  Tablo satırlarında ↑/↓/Enter
+src/lib/addressRange.ts   SAF · "G01-01 → G sonu" girişini rota anahtarına çevirir
+src/components/InlineEdit.tsx  Tablo hücresinde yerinde düzenleme (Adresler)
+src/services/outputService.ts  Çıktı Al: adres aralığı ve seçili ürün kaynakları
 src/lib/*.test.ts         Saf modül testleri (.env gerektirmez, Tuzak #11)
 src/pages/                9 sayfa
 src/services/             Veri erişim katmanı (UI supabase'i doğrudan import etmez)
-src/services/backupService.ts  Tek tıkla tam yedek → Belgeler\StokAdres Yedekleri
+src/services/backupService.ts  Tek tıkla tam yedek → Belgeler\StokAdres Yedekleri\<tarih>\*.csv
 src/services/*.test.ts    Vitest testleri
 src/data/localData.ts     addressRecordService singleton'ı burada
 scripts/bulk-load-products.mjs  Toplu ürün yükleme + yedekten kurtarma (README yanında)
-supabase/migrations/      21 dosya — adları schema_migrations ile birebir (Tuzak #14)
+supabase/migrations/      22 dosya — adları schema_migrations ile birebir (Tuzak #14)
 .github/workflows/ci.yml  typecheck + test + build
 ```
 
@@ -77,14 +80,14 @@ sunucu tarafına taşındığında ekranlar hiç değişmedi.
 |---|---|---|
 | Stoklar | `stocks` | 🟢 **Sunucu tarafı** sayfalama + arama + filtre sayaçları |
 | Ürün Detayı | `stocks` + seçim | 🟢 Tam CRUD |
-| Adresler | `addresses` | 🟢 **Sunucu tarafı** arama + filtre + sıralama + sayfalama |
+| Adresler | `addresses` | 🟢 **Sunucu tarafı** arama + filtre + sıralama + sayfalama · adres/koli/durum **yerinde düzenleme** |
 | İşlem Geçmişi | `audit` | 🟢 Çalışıyor |
-| **CABA Listesi** | `caba` | 🟢 Fiş yapıştır → adresler **depo rotasına göre** (koridor → raf → kat), koridor gruplu, yazdırılabilir (salt okuma) |
+| **Çıktı Al** (eski CABA Listesi) | `caba` | 🟢 Kaynak: CABA fişi · adres aralığı · aranıp seçilen ürünler. Düzen: **ürüne göre** (stok kodu/adı bir kez, adresler alt alta + koli) veya **rafa göre** (rota, koridor gruplu). Yazdır + Excel (salt okuma) |
 | **İçe Aktar** | `import` | 🟢 Önizleme + satır içi düzeltme + toplu yazma · adres biçimi düzeltme · "bunu mu demek istediniz?" |
 | Genel Bakış | `dashboard` | 🟢 `dashboard_summary` + sayım ilerlemesi (koridorlar, son 14 gün) + yedek hatırlatıcı |
 | Adres Bul | `find` | 🟢 Sunucu tarafı arama; stok kodu / ad / barkod **ve adres** (ters arama) · son aramalar |
 | Dışa Aktar | `export` | 🟢 Her küme yalnızca ihtiyacını çekiyor; ilerleme gösteriliyor |
-| Ayarlar | `settings` | 🟢 Tema (3 durum) · bağlantı teşhisi · sürüm · **Yedek Al** |
+| Ayarlar | `settings` | 🟢 Tema (3 durum) · bağlantı teşhisi · sürüm · **Yedek Al** (CSV klasörü) |
 
 ---
 
@@ -262,15 +265,35 @@ tanımsız. Migration'ın başına `select public.show_limit();` koymak yeterli
 (20260911081023). Eşik önemli: varsayılan 0,3 ile 7 kod 347 ms, 0,4 ile 5 kod
 76 ms (GIN index 10 kat fazla aday döndürüyor).
 
+### 16. Büyük veride Excel üretme — CSV kullan
+2026-09-11 ölçümü (Node, SheetJS 0.20.3, 300 bin ürünlük sentetik yedek =
+680 bin satır): `.xlsx` **61 sn, 2,4 GB heap / 3 GB RSS**; aynı veri CSV
+**1 sn**. Renderer'da bu, pencerenin donması ya da çökmesi demek. Bu yüzden
+Yedek Al CSV klasörü yazıyor; Dışa Aktar'da "Stoklar + Excel" seçilince uyarı
+var. Yeni bir toplu dışa aktarma yazarken birkaç on bin satırın üstünde CSV'ye
+git. Yedek CSV'leri BOM'suz (Supabase CSV içe aktarması ilk başlığı bozuk okur).
+
+⚠️ Bazı stok adlarında satır sonu var: `stoklar.csv` satır sayısı ürün
+sayısından fazla görünür. Alanlar tırnaklı olduğu için CSV geçerli; satır
+saymak için CSV ayrıştırıcı kullan, `\r\n` bölme değil.
+
+### 17. Adres aralığı: rota anahtarı
+`public.address_route_key(address)` → `<harf><raf 2><kat 2>`, DİBİ = `00`
+(G27-04 → G2704). Metin sıralaması = depo rotası = `compareAddresses`. İstemci
+kısmi girişi anahtara çevirir (`addressRange.ts`: "G" → G0000..G9999). Biçim
+dışı adres (H21-1) anahtar üretmez, aralığa **girmez**. Kanonik adres biçimi
+değişirse bu fonksiyon, `addressFormat.ts` ve `addressRange.ts` birlikte
+değişmeli.
+
 ---
 
 ## Canlı Database Şeması
 
-Şema `supabase/migrations/` içinde **tam olarak** mevcut ve 21 migration'ın
-tamamı canlıya (Frankfurt) uygulanmış (`schema_migrations` 21 satır, versiyonlar
+Şema `supabase/migrations/` içinde **tam olarak** mevcut ve 22 migration'ın
+tamamı canlıya (Frankfurt) uygulanmış (`schema_migrations` 22 satır, versiyonlar
 dosya adlarıyla birebir — 2026-09-11 `list_migrations` ile doğrulandı). Tokyo'da
-20 satır: son migration (`20260911102221`) yalnızca taşımanın ürettiği yetki
-açığını kapatıyor, Tokyo'da zaten gerekmiyordu.
+20 satır: taşımadan sonraki iki migration (`20260911102221` yetki düzeltmesi,
+`20260911131648` adres aralığı) yalnızca Frankfurt'ta. Tokyo'ya uygulanmaz.
 
 **Plan: Supabase FREE** (2026-09-11, `get_organization`). Otomatik yedek yok,
 7 gün kullanılmayan proje durdurulur, veritabanı sınırı 500 MB. Toplam boyut
@@ -298,6 +321,7 @@ Satır sayıları 2026-09-11 anlıkdır; yapı sabittir.
 | `suggest_stock_codes(text[],int)` | İçe Aktar "bunu mu demek istediniz?" — trigram benzerliği, eşik 0,4 (Tuzak #15) |
 | `address_aisle_summary` | Genel Bakış: koridor başına aktif konum/ürün/koli (yalnızca `A99-` biçimi) |
 | `address_daily_activity` | Genel Bakış: gün başına eklenen adres, son 31 gün, Europe/Istanbul |
+| `address_route_key(text)` · `list_addresses_in_range(text,text)` | Çıktı Al > Adres aralığı (Tuzak #17); kısmi index `idx_address_records_route_key` |
 
 ### Kritik index'ler
 ```sql
@@ -339,7 +363,7 @@ engellenir.
 | `create_address_conflict` / `resolve_address_conflict` | ❌ (Faz 3.2) |
 | trigger fonksiyonları (4 adet) | ❌ (Faz 3.2) |
 | `search_products` | ✅ SECURITY INVOKER, tasarım gereği |
-| `search_address_records` · `suggest_stock_codes` | ✅ SECURITY INVOKER, salt okuma |
+| `search_address_records` · `suggest_stock_codes` · `list_addresses_in_range` | ✅ SECURITY INVOKER, salt okuma |
 | `audit_operation_id` / `set_updated_at` | ✅ zararsız, `search_path` sabitlendi (3.2) |
 
 ### Trigger'lar
@@ -919,3 +943,45 @@ adresi Frankfurt; `app.asar` içinde Tokyo ref'i yok.
 
 **Not:** Canlı veride test kaydına benzeyen bir ürün var: `zücc11111` / "iğne"
 (küçük harf kod, adresi yok). Dokunulmadı; kullanıcı karar verir.
+
+## 2026-09-11 — Harun abinin geri bildirimi (sürüm 1.2.0)
+Kullanıcı 1.1.0'ı Harun abiye gösterdi; dört istek geldi. Belirsiz olanlar
+sorularla netleştirildi.
+
+**1. Adresler ekranında yerinde düzeltme** (`8025c51`)
+Adres, koli ve durum hücresine tıklayınca hücre düzenlenir (`InlineEdit`), yan
+panel açılmaz. Veri yazmadan doğrulandı: koli `0` → hata; `g33 4` → G33-04'e
+çevrilip sunucuya gitti, aynı ürünün aktif G33-04'ü olduğu için benzersizlik
+kuralıyla reddedildi ve hücrede açıklandı; Esc değeri geri getirdi.
+
+**2. "Çıktı Al" ekranı** (`8025c51`, eski CABA Listesi)
+- Kaynaklar: CABA fişi, adres aralığı (`G01-01 → G sonu`), aranıp seçilen
+  ürünler. Hepsi yazdırılır ve Excel'e alınır.
+- Düzen: kullanıcının tarifi — *"stok kodu tek, yanında stok ismi, adresler alt
+  alta, her adresin yanında koli"* — **ürüne göre** (Faz 2'deki ilk düzen); Faz
+  5'in **rafa göre** düzeni seçenek olarak kaldı. Fiş ve seçili ürünlerde
+  varsayılan ürüne göre, aralıkta rafa göre.
+- Migration `20260911131648` (Tuzak #17). Doğrulandı: G koridoru 382 konum =
+  elle sayım; F14 aralığı DİBİ dahil; H21-1 aralığa girmez.
+- Yazdırma PDF'le incelendi (başsız Edge): 15 adresli ürün tek blok, alt alta.
+  "Adresi bulunamayanlar" başlığı sayfa dibinde tablosuz kalıyordu →
+  `break-after: avoid`.
+
+**3. 300 bin ürün hazırlığı**
+- Hesap (Frankfurt, 157 MB): 300 bin ürün → **~470 MB**, ücretsiz sınır 500 MB.
+  ~175 MB'ı toplu yüklemenin işlem geçmişi.
+- **Kullanıcı kararı:** yüklemeden sonra toplu yükleme geçmişi silinecek
+  (`product-created` + barkod kaynaklı `product-updated`; bugün 94.905 +
+  101.990 kayıt). **Henüz silinmedi** — yükleme günü sayı gösterilip onay
+  alınacak (scripts/README.md → 300 bin ürün).
+- `fetchAllRows` sınırı 200 bin → 1 milyon satır.
+- Yedek Excel'den CSV klasörüne geçti (Tuzak #16). Doğrulandı: 94.900 /
+  101.987 / 2.818 satır, BOM'suz.
+- 300 bin veriyle arama/sayfalama ölçülmedi — veri henüz yok. Yükleme
+  sonrası ilk iş: `analyze` + Adres Bul ölçümü.
+
+**4. CABA çıktısında bir ürünün tüm adresleri bir arada** — 2. maddedeki ürüne
+göre düzen.
+
+**Açık:** Stok adlarının 331'inde satır sonu var (Tuzak #16); çıktıda iki satıra
+bölünmüş ad olarak görünür. Temizlik kullanıcının kararı.
