@@ -6,6 +6,7 @@ import { addProductBarcodes, DuplicateProductBarcodeError, DuplicateProductStock
 import { getProductMetrics } from '../services/productListing'
 import { copyToClipboard } from '../services/clipboard'
 import type { AddressRecord } from '../types/addressRecord'
+import { toStoredAddress } from '../lib/addressFormat'
 import type { Product } from '../types/product'
 import './ProductDetailPage.css'
 
@@ -196,13 +197,13 @@ export function ProductDetailPage({ productId, onBack, onAddressSelect }: Produc
     setAddressError('')
     try {
       if (editingRecordId) {
-        await addressRecordService.update(editingRecordId, { address: address.trim(), cartonCount: parsedCartonCount, isActive })
+        await addressRecordService.update(editingRecordId, { address: toStoredAddress(address), cartonCount: parsedCartonCount, isActive })
       } else {
         await addressRecordService.create({
           productId: product.id,
           stockCode: product.stockCode,
           stockName: product.stockName,
-          address: address.trim(),
+          address: toStoredAddress(address),
           cartonCount: parsedCartonCount,
           isActive,
         })
@@ -288,7 +289,7 @@ type AddressFormProps = {
 }
 
 function AddressForm(props: AddressFormProps) {
-  return <form className="product-address-form" onSubmit={props.onSubmit}><span className="selected-product__label">{props.isEditing ? 'Adres kaydını düzenle' : 'Yeni adres kaydı'}</span><label>Adres<input value={props.address} onChange={(event) => props.setAddress(event.target.value)} placeholder="Örn. A1-1" /></label><label>Koli adedi<input type="number" min="1" step="1" value={props.cartonCount} onChange={(event) => props.setCartonCount(event.target.value)} placeholder="Örn. 15" /></label><label className="product-active-toggle"><input type="checkbox" checked={props.isActive} onChange={(event) => props.setIsActive(event.target.checked)} /> Aktif kayıt</label>{props.error && <p className="form-error" role="alert">{props.error}</p>}<div className="record-actions"><button className="button button--primary" type="submit" disabled={props.isSaving}>{props.isSaving ? 'Kaydediliyor...' : 'Kaydet'}</button><button className="button button--secondary" type="button" onClick={props.onCancel}>Vazgeç</button></div></form>
+  return <form className="product-address-form" onSubmit={props.onSubmit}><span className="selected-product__label">{props.isEditing ? 'Adres kaydını düzenle' : 'Yeni adres kaydı'}</span><label>Adres<input value={props.address} onChange={(event) => props.setAddress(event.target.value)} placeholder="Örn. H21-01" /></label><label>Koli adedi<input type="number" min="1" step="1" value={props.cartonCount} onChange={(event) => props.setCartonCount(event.target.value)} placeholder="Örn. 15" /></label><label className="product-active-toggle"><input type="checkbox" checked={props.isActive} onChange={(event) => props.setIsActive(event.target.checked)} /> Aktif kayıt</label>{props.error && <p className="form-error" role="alert">{props.error}</p>}<div className="record-actions"><button className="button button--primary" type="submit" disabled={props.isSaving}>{props.isSaving ? 'Kaydediliyor...' : 'Kaydet'}</button><button className="button button--secondary" type="button" onClick={props.onCancel}>Vazgeç</button></div></form>
 }
 
 function formatDate(value: string | undefined): string {

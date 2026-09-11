@@ -35,7 +35,7 @@
 .caba-summary > div:last-child { border-right: 0; }
 .caba-summary strong { display: block; font: 600 24px 'Space Grotesk', sans-serif; }
 .caba-summary span { display: block; margin-top: 3px; color: var(--muted); font-size: 11px; }
-.caba-summary__warn strong { color: #9b6e1c; }
+.caba-summary__warn strong { color: var(--warning); }
 
 .caba-note { margin: 14px 0 0; color: var(--muted); font-size: 12px; }
 
@@ -43,10 +43,14 @@
 .caba-table { width: 100%; border-collapse: collapse; background: var(--surface); border: 1px solid var(--line); border-radius: 6px; overflow: hidden; font-size: 13px; }
 .caba-table th { height: 40px; padding: 0 16px; color: var(--muted); background: var(--surface-muted); font-size: 10px; font-weight: 700; letter-spacing: .1em; text-align: left; text-transform: uppercase; }
 .caba-table td { padding: 11px 16px; color: var(--ink); border-top: 1px solid var(--line); vertical-align: middle; }
-/* Ayni urunun ikinci ve sonraki adresleri: ust cizgi silinir, satirlar tek blok
-   gibi okunur. */
-.caba-row:not(.caba-row--first) td { border-top: 0; padding-top: 0; }
-.caba-row--first td { padding-top: 13px; }
+/* Koridor ara basligi: liste depo rotasina gore gruplu (lib/pickList.ts). */
+.caba-table .caba-aisle th { height: auto; padding: 16px 16px 8px; color: var(--ink); background: var(--surface); border-top: 1px solid var(--line); font: 700 12px 'Space Grotesk', sans-serif; letter-spacing: .08em; }
+.caba-table .caba-aisle th span { margin-left: 10px; color: var(--muted); font-family: inherit; font-size: 11px; font-weight: 500; letter-spacing: 0; text-transform: none; }
+.caba-table thead + tbody .caba-aisle th { border-top: 0; }
+.caba-split { display: block; margin-top: 2px; color: var(--muted); font-size: 11px; }
+/* Isaretleme kutusu yalnizca kagitta: toplayici aldigi satiri isaretler. */
+.caba-check { display: none; }
+.caba-kbd { padding: 2px 6px; color: var(--muted); border: 1px solid var(--line); border-radius: 4px; font: 11px ui-monospace, SFMono-Regular, Menlo, monospace; }
 
 /* Adres birincil bilgi: en buyuk, monospace, tam kontrastli. */
 .caba-address { color: var(--ink); font: 600 19px ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: -.01em; white-space: nowrap; }
@@ -55,7 +59,7 @@
 .caba-quantity { color: var(--muted); font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
 
 .caba-misses h2 { display: flex; align-items: center; gap: 9px; margin: 0 0 4px; font-size: 15px; }
-.caba-misses h2 span { padding: 2px 8px; color: #9b6e1c; background: #fff4dc; border-radius: 999px; font-size: 11px; font-weight: 700; }
+.caba-misses h2 span { padding: 2px 8px; color: var(--warning); background: var(--warning-soft); border-radius: 999px; font-size: 11px; font-weight: 700; }
 .caba-misses__hint { margin: 0 0 14px; color: var(--muted); font-size: 12px; }
 .caba-table--misses td { color: var(--muted); }
 .caba-table--misses td strong { color: var(--ink); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
@@ -83,12 +87,26 @@
   .caba-table td { padding: 7px 10px; color: #000; border-top-color: #ddd; }
   .caba-address { font-size: 15px; }
 
-  /* Bir urunun adresleri sayfa sonunda ikiye bolunmesin. */
-  .caba-row--first, .caba-misses tr { break-inside: avoid; }
+  /* Satir sayfa sonunda ikiye bolunmesin; koridor basligi sayfanin dibinde
+     yalniz kalmasin. */
+  .caba-row, .caba-misses tr { break-inside: avoid; }
+  .caba-aisle { break-after: avoid; }
+  .caba-table .caba-aisle th { padding: 10px 10px 4px; color: #000; background: transparent; border-top: 1.5px solid #000; font-size: 11px; }
+  .caba-table .caba-aisle th span { color: #444; }
+  .caba-check { display: table-cell; width: 24px; padding-right: 0; }
+  .caba-checkbox { display: inline-block; width: 12px; height: 12px; border: 1.5px solid #000; border-radius: 2px; vertical-align: middle; }
+  .caba-split { color: #444; }
   .caba-misses { break-before: auto; }
   .caba-misses h2 span { border: 1px solid #999; background: transparent; color: #000; }
 
   h1 { font-size: 20px; }
   .page-header__description { color: #444; font-size: 11px; }
   .intro__eyebrow, .caba-note, .caba-misses__hint { color: #444; }
+}
+
+/* Kagit kenar boslugu ve alt bilgi: uzun listelerde sayfa sirasi kaybolmasin. */
+@page {
+  margin: 12mm 10mm 14mm;
+  @bottom-left { content: "StokAdres · Adres Listesi"; font-size: 9pt; color: #444; }
+  @bottom-right { content: "Sayfa " counter(page) " / " counter(pages); font-size: 9pt; color: #444; }
 }

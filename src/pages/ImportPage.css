@@ -70,6 +70,19 @@
 .import-failures h2 { margin: 0 0 12px; font-size: 15px; }
 .import-done-actions { margin-top: 24px; }
 
+/* --- adres bicimi notu (lib/addressFormat.ts) --- */
+.import-note { display: block; margin-top: 4px; font-size: 11px; line-height: 1.4; }
+.import-note--fixed { color: var(--teal); }
+.import-note--unrecognized { color: var(--warning); font-weight: 600; }
+
+/* --- "bunu mu demek istediniz?" (services/stockCodeSuggestions.ts) --- */
+.import-suggestions { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; margin-top: 6px; max-width: 320px; }
+.import-suggestions > span { color: var(--muted); font-size: 11px; }
+.import-suggestion { padding: 2px 7px; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 4px; font: 11px ui-monospace, SFMono-Regular, Menlo, monospace; cursor: pointer; }
+.import-suggestion:hover { color: var(--teal); border-color: var(--teal); }
+/* Varyanttan gelen (güvenilir) öneri öne çıkar. */
+.import-suggestion--strong { color: var(--teal); border-color: var(--teal); font-weight: 600; }
+
 @media (max-width: 820px) {
   .import-conflict-bar { align-items: flex-start; flex-direction: column; }
 }

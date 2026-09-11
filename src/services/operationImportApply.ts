@@ -1,4 +1,5 @@
 import { supabase } from '../lib/supabase'
+import { normalizeAddressInput } from '../lib/addressFormat'
 import { validateOperationRow, type ImportOperation, type OperationImportRow } from './operationImportService'
 import {
   findActiveAddresses,
@@ -37,6 +38,15 @@ export type PreviewRow = {
    * girilen değer olduğu gibi saklanıyor.
    */
   cartonText: string
+  /**
+   * Yazılacak adres: biçim tanınıyorsa kanonik hali (H21-1 → H21-01), değilse
+   * kırpılmış hali. Hücrede kullanıcının yazdığı değer duruyor; aksi halde
+   * 600 ms'lik yeniden kontrol, kullanıcı "H21-10" yazarken "H21-1"de durduğu
+   * an değeri "H21-01"e çevirip elinden alırdı.
+   */
+  writeAddress: string
+  /** 'addresses' işleminde: adres düzeltildi mi, yoksa biçimi tanınmadı mı. */
+  addressNote?: { kind: 'fixed' | 'unrecognized'; value: string }
   status: PreviewStatus
   detail: string
   product?: ProductLite
@@ -94,6 +104,15 @@ export async function buildPreview(operation: ImportOperation, rows: OperationIm
   const seenBarcodes = new Set<string>()
 
   return rows.map((row) => {
+    // Adres biçimi yalnızca uyarır, satırı engellemez: depoda bilinmeyen bir
+    // adres tipi olabilir. Kanonik biçim: lib/addressFormat.ts.
+    const format = operation === 'addresses' && row.address.trim() ? normalizeAddressInput(row.address) : null
+    const writeAddress = format?.valid ? format.value : row.address.trim()
+    const addressNote = !format ? undefined
+      : !format.valid ? { kind: 'unrecognized' as const, value: row.address.trim() }
+      : format.changed ? { kind: 'fixed' as const, value: format.value }
+      : undefined
+
     const base = {
       rowNumber: row.rowNumber,
       stockCode: row.stockCode,
@@ -102,6 +121,8 @@ export async function buildPreview(operation: ImportOperation, rows: OperationIm
       address: row.address,
       cartonCount: row.cartonCount,
       cartonText: row.cabaQuantity,
+      writeAddress,
+      addressNote,
     }
 
     const errors = validateOperationRow(operation, row)
@@ -146,7 +167,7 @@ export async function buildPreview(operation: ImportOperation, rows: OperationIm
 
     // operation === 'addresses'
     const existing = (addressesByProductId.get(product.id) ?? [])
-      .find((record) => normalizeAddress(record.address) === normalizeAddress(row.address))
+      .find((record) => normalizeAddress(record.address) === normalizeAddress(writeAddress))
 
     if (!existing) return { ...base, product, status: 'ready' as const, detail: 'Yeni adres' }
     if (existing.cartonCount === row.cartonCount) {
@@ -288,12 +309,12 @@ async function applyAddresses(
     throwIfAborted(signal)
     const { error } = await supabase
       .from('address_records')
-      .insert(batch.map((row) => ({ product_id: row.product!.id, address: row.address.trim(), carton_count: row.cartonCount! })))
+      .insert(batch.map((row) => ({ product_id: row.product!.id, address: row.writeAddress, carton_count: row.cartonCount! })))
     if (error) {
       await retryIndividually(batch, outcome, async (row) => {
         const { error: rowError } = await supabase
           .from('address_records')
-          .insert({ product_id: row.product!.id, address: row.address.trim(), carton_count: row.cartonCount! })
+          .insert({ product_id: row.product!.id, address: row.writeAddress, carton_count: row.cartonCount! })
         if (rowError) throw new Error(rowError.message)
       })
     } else {

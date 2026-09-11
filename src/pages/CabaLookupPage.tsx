@@ -1,7 +1,9 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { ClipboardPaste, FileSpreadsheet, Printer, Upload, X } from 'lucide-react'
 import { lookupCabaAddresses, type CabaLookupResult } from '../services/cabaLookup'
 import { OperationImportFileError, parseOperationImportFile, parseOperationImportText } from '../services/operationImportService'
+import { buildPickList } from '../lib/pickList'
+import { formatNumber } from '../lib/format'
 import './CabaLookupPage.css'
 
 // Uygulamanın asıl günlük ekranı: CABA fişini yapıştır, adresleri al, yazdır.
@@ -44,6 +46,11 @@ export function CabaLookupPage() {
     }
   }
 
+  const lookupPasted = () => {
+    if (!pastedText.trim() || isLooking) return
+    void runLookup(() => parseOperationImportText(pastedText), 'Yapıştırılan liste')
+  }
+
   const reset = () => {
     setStage('input')
     setResult(null)
@@ -71,6 +78,7 @@ export function CabaLookupPage() {
           <textarea
             value={pastedText}
             onChange={(event) => setPastedText(event.target.value)}
+            onKeyDown={(event) => { if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) { event.preventDefault(); lookupPasted() } }}
             placeholder={'Excel\'den kopyalayıp buraya yapıştırın.\n\nİlk satır başlık olmalı, örneğin:\nStok Kodu\tCABA Miktarı'}
             rows={9}
             autoFocus
@@ -82,10 +90,11 @@ export function CabaLookupPage() {
             className="button button--primary"
             type="button"
             disabled={!pastedText.trim() || isLooking}
-            onClick={() => void runLookup(() => parseOperationImportText(pastedText), 'Yapıştırılan liste')}
+            onClick={lookupPasted}
           >
             {isLooking ? 'Adresler bulunuyor…' : 'Adresleri Bul'}
           </button>
+          <kbd className="caba-kbd">Ctrl Enter</kbd>
 
           <span className="caba-actions__divider">veya</span>
 
@@ -109,7 +118,7 @@ export function CabaLookupPage() {
 
         <p className="caba-hint">
           <FileSpreadsheet size={14} /> Yalnızca <strong>Stok Kodu</strong> kolonu gerekli. Fazladan kolonlar yok sayılır, bu yüzden
-          CABA çıktısını olduğu gibi yapıştırabilirsiniz. Bu ekran depo verisini değiştirmez.
+          CABA çıktısını olduğu gibi yapıştırabilirsiniz. Liste depo rotasına (koridor → raf → kat) göre sıralanır. Bu ekran depo verisini değiştirmez.
         </p>
       </section>
     </main>
@@ -118,8 +127,23 @@ export function CabaLookupPage() {
 
 function CabaResults({ result, sourceLabel, onReset }: { result: CabaLookupResult; sourceLabel: string; onReset: () => void }) {
   const { matches, misses, skippedRows, duplicateRows } = result
-  const totalCartons = matches.reduce((sum, match) => sum + match.addresses.reduce((inner, address) => inner + address.cartonCount, 0), 0)
+  const { rows, groups } = buildPickList(matches)
+  const totalCartons = rows.reduce((sum, row) => sum + row.cartonCount, 0)
+  const aisleCount = groups.filter((group) => group.aisle !== null).length
   const printedAt = new Intl.DateTimeFormat('tr-TR', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date())
+
+  // Üretimde uygulama menüsü kaldırıldığı için Electron Ctrl+P'yi kendiliğinden
+  // yakalamıyor; sonuç ekranında kısayolu biz bağlıyoruz.
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'p') {
+        event.preventDefault()
+        window.print()
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [])
 
   return (
     <main className="operations-page caba-page caba-page--results">
@@ -130,14 +154,15 @@ function CabaResults({ result, sourceLabel, onReset }: { result: CabaLookupResul
         </div>
         <div className="caba-results__actions">
           <button className="button button--secondary" type="button" onClick={onReset}><X size={14} /> Yeni Liste</button>
-          <button className="button button--primary" type="button" onClick={() => window.print()}><Printer size={15} /> Yazdır</button>
+          <button className="button button--primary" type="button" onClick={() => window.print()} title="Ctrl+P"><Printer size={15} /> Yazdır</button>
         </div>
       </header>
 
       <section className="caba-summary" aria-label="Özet">
-        <div><strong>{matches.length}</strong><span>adresi bulundu</span></div>
-        <div className={misses.length ? 'caba-summary__warn' : undefined}><strong>{misses.length}</strong><span>bulunamadı</span></div>
-        <div><strong>{totalCartons}</strong><span>toplam koli</span></div>
+        <div><strong>{formatNumber(matches.length)}</strong><span>stoğun adresi bulundu</span></div>
+        <div><strong>{formatNumber(rows.length)}</strong><span>{aisleCount > 0 ? `konum · ${aisleCount} koridor` : 'konum'}</span></div>
+        <div className={misses.length ? 'caba-summary__warn' : undefined}><strong>{formatNumber(misses.length)}</strong><span>bulunamadı</span></div>
+        <div><strong>{formatNumber(totalCartons)}</strong><span>toplam koli</span></div>
       </section>
 
       {(skippedRows > 0 || duplicateRows > 0) && (
@@ -147,27 +172,46 @@ function CabaResults({ result, sourceLabel, onReset }: { result: CabaLookupResul
         </p>
       )}
 
-      {matches.length > 0 && (
+      {rows.length > 0 && (
         <section className="caba-results" aria-label="Bulunan adresler">
-          <table className="caba-table">
+          {/* Satırlar fiş sırasında DEĞİL depo rotasında: toplayıcı listeyi
+              baştan sona yürür. Çok konumlu ürün her konumda ayrı satırdır. */}
+          <table className="caba-table caba-table--pick">
             <thead>
-              <tr><th>Stok kodu</th><th>Stok adı</th><th className="caba-table__address">Adres</th><th>Koli</th><th>CABA</th></tr>
+              <tr>
+                <th className="caba-check" aria-hidden="true" />
+                <th className="caba-table__address">Adres</th>
+                <th>Stok kodu</th>
+                <th>Stok adı</th>
+                <th>Koli</th>
+                <th>CABA</th>
+              </tr>
             </thead>
-            <tbody>
-              {matches.map((match) => (
-                match.addresses.map((address, index) => (
-                  <tr key={address.id} className={index === 0 ? 'caba-row caba-row--first' : 'caba-row'}>
-                    {/* Girilen değil, veritabanındaki kanonik stok kodu gösteriliyor:
-                        raf etiketinde ve uygulamanın geri kalanında yazan bu. */}
-                    <td>{index === 0 ? <strong>{match.product.stockCode}</strong> : null}</td>
-                    <td>{index === 0 ? match.product.stockName : null}</td>
-                    <td className="caba-table__address"><span className="caba-address">{address.address}</span></td>
-                    <td className="caba-carton">{address.cartonCount}</td>
-                    <td className="caba-quantity">{index === 0 ? (match.cabaQuantity || '—') : null}</td>
+            {groups.map((group) => (
+              <tbody key={group.aisle ?? 'other'}>
+                <tr className="caba-aisle">
+                  <th colSpan={6} scope="rowgroup">
+                    {group.aisle ? `Koridor ${group.aisle}` : 'Diğer adresler'}
+                    <span>{group.rows.length} konum</span>
+                  </th>
+                </tr>
+                {group.rows.map((row) => (
+                  <tr key={row.key} className="caba-row">
+                    <td className="caba-check" aria-hidden="true"><span className="caba-checkbox" /></td>
+                    <td className="caba-table__address"><span className="caba-address">{row.address}</span></td>
+                    <td>
+                      {/* Girilen değil, veritabanındaki kanonik stok kodu: raf
+                          etiketinde ve uygulamanın geri kalanında yazan bu. */}
+                      <strong>{row.stockCode}</strong>
+                      {row.locationCount > 1 && <small className="caba-split">{row.locationCount} konumda</small>}
+                    </td>
+                    <td>{row.stockName}</td>
+                    <td className="caba-carton">{formatNumber(row.cartonCount)}</td>
+                    <td className="caba-quantity">{row.cabaQuantity || '—'}</td>
                   </tr>
-                ))
-              ))}
-            </tbody>
+                ))}
+              </tbody>
+            ))}
           </table>
         </section>
       )}

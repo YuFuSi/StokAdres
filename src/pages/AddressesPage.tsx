@@ -6,6 +6,8 @@ import { queryProducts, type ProductListItem } from '../services/productService'
 import type { AddressRecord } from '../types/addressRecord'
 import type { Product } from '../types/product'
 import { formatNumber } from '../lib/format'
+import { rowNavigationProps } from '../lib/rowNavigation'
+import { toStoredAddress } from '../lib/addressFormat'
 import './AddressesPage.css'
 
 type AddressesPageProps = {
@@ -139,7 +141,7 @@ export function AddressesPage({ onBackToDashboard, initialSelectedRecordId = nul
           productId: product.id,
           stockCode: product.stockCode,
           stockName: product.stockName,
-          address: address.trim(),
+          address: toStoredAddress(address),
           cartonCount: parsedCartonCount,
           isActive,
         })
@@ -148,7 +150,7 @@ export function AddressesPage({ onBackToDashboard, initialSelectedRecordId = nul
           productId: product.id,
           stockCode: product.stockCode,
           stockName: product.stockName,
-          address: address.trim(),
+          address: toStoredAddress(address),
           cartonCount: parsedCartonCount,
           isActive,
         })
@@ -223,13 +225,13 @@ export function AddressesPage({ onBackToDashboard, initialSelectedRecordId = nul
       {!isLoading && !error && (
         <div className={`addresses-layout ${selectedRecord ? 'addresses-layout--detail-open' : ''}`}>
           <section className="addresses-table-panel" aria-label="Adres kayıtları">
-            <div className="addresses-table-caption"><span>{total === 0 ? '0 kayıt' : `${formatNumber(pageStart + 1)}-${formatNumber(pageStart + visibleRecords.length)} / ${formatNumber(total)} kayıt`}</span><span>Satıra tıklayarak ayrıntıyı açın</span></div>
+            <div className="addresses-table-caption"><span>{total === 0 ? '0 kayıt' : `${formatNumber(pageStart + 1)}-${formatNumber(pageStart + visibleRecords.length)} / ${formatNumber(total)} kayıt`}</span><span>Satıra tıklayın ya da ↑↓ ile gezip Enter'a basın</span></div>
             {total === 0 ? <p className="addresses-state">{counts.all === 0 ? 'Henüz adres kaydı bulunmuyor.' : 'Aramanızla eşleşen adres bulunamadı.'}</p> : (
               <>
               <div className="addresses-table-wrap">
                 <table className="addresses-table">
                   <thead><tr><th>Adres</th><th>Stok kodu</th><th>Stok adı</th><th>Koli</th><th>Durum</th><th>Güncellenme</th><th aria-label="Aksiyon" /></tr></thead>
-                  <tbody>{visibleRecords.map((record) => <tr className={selectedRecord?.id === record.id ? 'addresses-row addresses-row--selected' : 'addresses-row'} key={record.id} onClick={() => { setSelectedRecord(record); closeForm() }}>
+                  <tbody>{visibleRecords.map((record) => <tr className={selectedRecord?.id === record.id ? 'addresses-row addresses-row--selected' : 'addresses-row'} key={record.id} onClick={() => { setSelectedRecord(record); closeForm() }} {...rowNavigationProps(() => { setSelectedRecord(record); closeForm() })}>
                     <td><span className="address-cell"><MapPin size={14}/>{record.address}</span></td><td><strong>{record.stockCode}</strong></td><td className="address-product-name">{record.stockName}</td><td><strong className="carton-cell">{formatNumber(record.cartonCount)}</strong></td><td><StatusBadge isActive={record.isActive} /></td><td>{formatDate(record.updatedAt)}</td><td><button className="row-open" type="button" tabIndex={-1} aria-label={`${record.address} ayrıntısını aç`} onClick={(event) => { event.stopPropagation(); setSelectedRecord(record); closeForm() }}><ChevronRight size={16}/></button></td>
                   </tr>)}</tbody>
                 </table>
@@ -293,7 +295,7 @@ function AddressForm(props: AddressFormProps) {
       onSelect={(product) => { props.setSelectedProduct(product); props.setSelectedProductId(product?.id ?? '') }}
       disabled={props.isEditing}
     />
-    <label>Adres<input value={props.address} onChange={(event) => props.setAddress(event.target.value)} placeholder="Örn. A1-1" /></label>
+    <label>Adres<input value={props.address} onChange={(event) => props.setAddress(event.target.value)} placeholder="Örn. H21-01" /></label>
     <label>Koli adedi<input type="number" min="1" step="1" value={props.cartonCount} onChange={(event) => props.setCartonCount(event.target.value)} placeholder="Örn. 15" /></label>
     <label className="address-active-toggle"><input type="checkbox" checked={props.isActive} onChange={(event) => props.setIsActive(event.target.checked)} /> Aktif kayıt</label>
     {props.error && <p className="form-error" role="alert">{props.error}</p>}

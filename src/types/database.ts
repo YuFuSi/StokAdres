@@ -485,6 +485,15 @@ export type Database = {
       }
       show_limit: { Args: never; Returns: number }
       show_trgm: { Args: { "": string }; Returns: string[] }
+      suggest_stock_codes: {
+        Args: { p_codes: string[]; p_limit?: number }
+        Returns: {
+          input_code: string
+          score: number
+          stock_code: string
+          stock_name: string
+        }[]
+      }
       write_audit_log: {
         Args: {
           p_action: string
