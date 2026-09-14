@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { CabaMatch } from '../services/cabaLookup'
-import { buildPickList, buildProductList, countAisles } from './pickList'
+import { buildPickList, buildProductList, countAisles, PRINTED_ADDRESS_LIMIT } from './pickList'
 
 const match = (rowNumber: number, stockCode: string, addresses: Array<[string, number]>): CabaMatch => ({
   rowNumber,
@@ -46,21 +46,36 @@ describe('buildPickList', () => {
 })
 
 describe('buildProductList', () => {
-  it('her ürünü bir kez, adreslerini rota sırasında alt alta verir', () => {
-    const [group] = buildProductList([match(1, 'TEKS1', [['J09-02', 3], ['F13-01', 5], ['F14-DİBİ', 1]])])
+  it('adresleri en çok koliden aza dizer, eşit kolide rota sırası', () => {
+    const [group] = buildProductList([match(1, 'TEKS1', [['J09-02', 3], ['F13-01', 5], ['G01-01', 3], ['F14-DİBİ', 1]])])
     expect(group.stockCode).toBe('TEKS1')
-    expect(group.addresses.map((address) => [address.address, address.cartonCount])).toEqual([['F13-01', 5], ['F14-DİBİ', 1], ['J09-02', 3]])
-    expect(group.totalCartons).toBe(9)
+    expect(group.addresses.map((address) => [address.address, address.cartonCount])).toEqual([['F13-01', 5], ['G01-01', 3], ['J09-02', 3], ['F14-DİBİ', 1]])
+    expect(group.totalCartons).toBe(12)
     expect(group.cabaQuantity).toBe('10')
   })
 
-  it('ürünleri ilk adreslerine göre rota sırasında dizer', () => {
+  it('kâğıda en çok kolili 3 adresi koyar, kalanları sayar', () => {
+    const [group] = buildProductList([match(1, 'X', [['F01-01', 10], ['F02-01', 50], ['F03-01', 20], ['F04-01', 40], ['F05-01', 30]])])
+    expect(PRINTED_ADDRESS_LIMIT).toBe(3)
+    expect(group.shown.map((address) => address.address)).toEqual(['F02-01', 'F04-01', 'F05-01'])
+    expect(group.hiddenCount).toBe(2)
+    expect(group.addresses).toHaveLength(5)
+    expect(group.totalCartons).toBe(150)
+  })
+
+  it('3 adresten azsa hepsini gösterir', () => {
+    const [group] = buildProductList([match(1, 'Y', [['G06-01', 2], ['F13-04', 4]])])
+    expect(group.shown.map((address) => address.address)).toEqual(['F13-04', 'G06-01'])
+    expect(group.hiddenCount).toBe(0)
+  })
+
+  it('ürünleri Adres 1e (en kolili adres) göre rota sırasında dizer', () => {
     const groups = buildProductList([
       match(1, 'B', [['H01-01', 1]]),
-      match(2, 'A', [['K05-01', 1], ['F20-02', 1]]),
+      match(2, 'A', [['K05-01', 9], ['F20-02', 1]]),
       match(3, 'C', [['G06-01', 1]]),
     ])
-    expect(groups.map((group) => group.stockCode)).toEqual(['A', 'C', 'B'])
+    expect(groups.map((group) => group.stockCode)).toEqual(['C', 'B', 'A'])
   })
 
   it('adresi olmayan ürünü listeye koymaz', () => {

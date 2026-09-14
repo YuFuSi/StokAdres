@@ -127,13 +127,17 @@
 .output-layout-toggle button[aria-pressed="true"] { color: var(--ink); background: var(--surface); box-shadow: 0 1px 2px rgba(0,0,0,.08); }
 .output-excel-status { margin: 10px 0 0; color: var(--muted); font-size: 12px; text-align: right; }
 
-/* ürüne göre: stok kodu ve adı bir kez, adresler alt alta */
+/* ürüne göre: ürün başına tek satır, en çok kolili 3 adres yan yana */
 .caba-table--products td { vertical-align: top; }
-.caba-table--products .caba-row--first td { padding-top: 13px; }
-.caba-table--products .caba-row:not(.caba-row--first) td { padding-top: 3px; border-top: 0; }
 .caba-table--products .caba-address { font-size: 17px; }
 .caba-product__code strong { display: block; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
-.caba-product__name { min-width: 220px; white-space: normal; }
+.caba-product__name { min-width: 200px; white-space: normal; }
+.caba-slot-cell { width: 1%; min-width: 118px; white-space: nowrap; }
+.caba-slot { display: flex; align-items: flex-start; gap: 7px; }
+.caba-slot > span:last-child { display: flex; flex-direction: column; }
+.caba-slot .caba-checkbox { display: none; }
+.caba-slot__carton { margin-top: 2px; color: var(--muted); font-size: 12px; }
+.caba-slot__more { display: block; margin-top: 5px; color: var(--warning); font-size: 11px; font-weight: 600; }
 
 @media (max-width: 900px) {
   .output-picker { grid-template-columns: 1fr; }
@@ -170,11 +174,14 @@
      (ilk PDF'te 1. sayfada başlık, 2. sayfada tablo çıktı). */
   .caba-misses h2, .caba-misses__hint { break-after: avoid; }
 
-  /* Ürüne göre: bir ürünün adresleri sayfa sonunda bölünmesin. */
-  .caba-product { break-inside: avoid; }
-  .caba-table--products .caba-row--first td { border-top: 1px solid #999; }
-  .caba-table--products .caba-row:not(.caba-row--first) td { padding-top: 2px; }
+  /* Ürüne göre: her adres slotunun solunda işaretleme kutusu. */
+  .caba-table--products td { border-top-color: #999; }
   .caba-table--products .caba-address { font-size: 14px; }
+  .caba-slot-cell { min-width: 0; }
+  .caba-slot .caba-checkbox { display: inline-block; margin-top: 2px; }
+  .caba-slot__carton { color: #000; font-size: 11px; }
+  .caba-slot__more { color: #444; }
+  .caba-table--products .cell-empty { color: #999; }
   .output-excel-status { display: none; }
   .caba-misses { break-before: auto; }
   .caba-misses h2 span { border: 1px solid #999; background: transparent; color: #000; }

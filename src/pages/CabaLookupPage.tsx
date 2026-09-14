@@ -6,7 +6,7 @@ import { queryProducts, type ProductListItem } from '../services/productService'
 import { findAddressesForProducts, findAddressesInRange, listAisles, type AisleOption } from '../services/outputService'
 import { exportWorkbook, type ExportRow, type ExportSheet } from '../services/xlsxExport'
 import { resolveAddressRange } from '../lib/addressRange'
-import { buildPickList, buildProductList, countAisles, type OutputItem, type OutputLayout } from '../lib/pickList'
+import { buildPickList, buildProductList, countAisles, PRINTED_ADDRESS_LIMIT, type OutputItem, type OutputLayout, type ProductGroup } from '../lib/pickList'
 import { formatNumber } from '../lib/format'
 import './CabaLookupPage.css'
 
@@ -28,6 +28,8 @@ type OutputResult = {
   misses: CabaMiss[]
   notes: string[]
 }
+
+const ADDRESS_SLOTS = Array.from({ length: PRINTED_ADDRESS_LIMIT }, (_, index) => index)
 
 const TABS: Array<{ id: SourceTab; label: string; icon: typeof MapPin }> = [
   { id: 'caba', label: 'CABA fişi', icon: ClipboardPaste },
@@ -372,7 +374,7 @@ function AddressOutput({ result, onReset }: { result: OutputResult; onReset: () 
     try {
       const withCaba = (row: ExportRow, quantity: string): ExportRow => showCaba ? { ...row, CABA: quantity } : row
       const listSheet: ExportSheet = layout === 'product'
-        ? { name: 'Ürüne göre', rows: products.flatMap((group) => group.addresses.map((address) => withCaba({ 'Stok Kodu': group.stockCode, 'Stok Adı': group.stockName, Adres: address.address, Koli: address.cartonCount }, group.cabaQuantity))) }
+        ? { name: 'Ürüne göre', rows: productSheetRows(products, showCaba) }
         : { name: 'Rafa göre', rows: rows.map((row) => withCaba({ Adres: row.address, 'Stok Kodu': row.stockCode, 'Stok Adı': row.stockName, Koli: row.cartonCount }, row.cabaQuantity)) }
       const sheets: ExportSheet[] = [listSheet]
       if (misses.length > 0) {
@@ -420,41 +422,49 @@ function AddressOutput({ result, onReset }: { result: OutputResult; onReset: () 
 
       {rows.length > 0 && layout === 'product' && (
         <section className="caba-results" aria-label="Ürüne göre adresler">
-          {/* Her ürün bir kez; adresleri alt alta, her birinin yanında koli.
-              Ürünler ilk adreslerine göre rota sırasında. */}
+          {/* Her ürün tek satır: en çok kolili 3 adres yan yana, altında koli.
+              Ürünler Adres 1'e göre rota sırasında (lib/pickList.ts). */}
           <table className="caba-table caba-table--products">
             <thead>
               <tr>
                 <th>Stok kodu</th>
                 <th>Stok adı</th>
-                <th className="caba-check" aria-hidden="true" />
-                <th className="caba-table__address">Adres</th>
-                <th>Koli</th>
+                {ADDRESS_SLOTS.map((slot) => <th key={slot} className="caba-slot-cell">Adres {slot + 1}</th>)}
                 {showCaba && <th>CABA</th>}
               </tr>
             </thead>
-            {products.map((group) => {
-              const span = group.addresses.length
-              return (
-                <tbody key={group.key} className="caba-product">
-                  {group.addresses.map((address, index) => (
-                    <tr key={address.id} className={index === 0 ? 'caba-row caba-row--first' : 'caba-row'}>
-                      {index === 0 && <>
-                        <td rowSpan={span} className="caba-product__code">
-                          <strong>{group.stockCode}</strong>
-                          {span > 1 && <small className="caba-split">{span} konum · {formatNumber(group.totalCartons)} koli</small>}
-                        </td>
-                        <td rowSpan={span} className="caba-product__name">{group.stockName}</td>
-                      </>}
-                      <td className="caba-check" aria-hidden="true"><span className="caba-checkbox" /></td>
-                      <td className="caba-table__address"><span className="caba-address">{address.address}</span></td>
-                      <td className="caba-carton">{formatNumber(address.cartonCount)}</td>
-                      {showCaba && index === 0 && <td rowSpan={span} className="caba-quantity">{group.cabaQuantity || '—'}</td>}
-                    </tr>
-                  ))}
-                </tbody>
-              )
-            })}
+            <tbody>
+              {products.map((group) => (
+                <tr key={group.key} className="caba-row">
+                  <td className="caba-product__code">
+                    <strong>{group.stockCode}</strong>
+                    {group.addresses.length > 1 && <small className="caba-split">{group.addresses.length} konum · {formatNumber(group.totalCartons)} koli</small>}
+                  </td>
+                  <td className="caba-product__name">{group.stockName}</td>
+                  {ADDRESS_SLOTS.map((slot) => {
+                    const address = group.shown[slot]
+                    const isLast = slot === PRINTED_ADDRESS_LIMIT - 1
+                    return (
+                      <td key={slot} className="caba-slot-cell">
+                        {address
+                          ? (
+                            <div className="caba-slot">
+                              <span className="caba-checkbox" aria-hidden="true" />
+                              <span>
+                                <span className="caba-address">{address.address}</span>
+                                <span className="caba-slot__carton">{formatNumber(address.cartonCount)} koli</span>
+                              </span>
+                            </div>
+                          )
+                          : <span className="cell-empty">—</span>}
+                        {isLast && group.hiddenCount > 0 && <small className="caba-slot__more">+{group.hiddenCount} adres daha</small>}
+                      </td>
+                    )
+                  })}
+                  {showCaba && <td className="caba-quantity">{group.cabaQuantity || '—'}</td>}
+                </tr>
+              ))}
+            </tbody>
           </table>
         </section>
       )}
@@ -524,6 +534,27 @@ function AddressOutput({ result, onReset }: { result: OutputResult; onReset: () 
       )}
     </main>
   )
+}
+
+/**
+ * Excel "Ürüne göre": kâğıttaki gibi ürün başına bir satır, ama 3 adresle
+ * sınırlı değil — Adres 1, Koli 1 … listedeki en çok adresli ürün kadar.
+ * Eksik hücreler '' ile doldurulur; json_to_sheet başlıkları ilk satırın
+ * anahtar sırasından ürettiği için her satır aynı anahtarlara sahip olmalı.
+ */
+function productSheetRows(products: ProductGroup[], showCaba: boolean): ExportRow[] {
+  const slotCount = products.reduce((max, group) => Math.max(max, group.addresses.length), 0)
+  return products.map((group) => {
+    const row: ExportRow = { 'Stok Kodu': group.stockCode, 'Stok Adı': group.stockName }
+    for (let index = 0; index < slotCount; index += 1) {
+      const address = group.addresses[index]
+      row[`Adres ${index + 1}`] = address?.address ?? ''
+      row[`Koli ${index + 1}`] = address?.cartonCount ?? ''
+    }
+    row['Toplam Koli'] = group.totalCartons
+    if (showCaba) row.CABA = group.cabaQuantity
+    return row
+  })
 }
 
 function missText(miss: CabaMiss): string {
