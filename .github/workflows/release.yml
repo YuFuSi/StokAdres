@@ -46,8 +46,11 @@ jobs:
           VITE_SUPABASE_ANON_KEY=${{ secrets.VITE_SUPABASE_ANON_KEY }}
           EOF
 
+      # electron-builder CI ortamını görünce varsayılan olarak GitHub Release'e
+      # yayınlamayı deniyor ve GH_TOKEN istiyor ("Implicit publishing triggered
+      # by CI detection"). Biz yalnızca dosyayı istiyoruz, yayınlamıyoruz.
       - name: Kurulum dosyasını derle
-        run: npm run build:win
+        run: npm run build:win -- --publish never
 
       - uses: actions/upload-artifact@v4
         with:
