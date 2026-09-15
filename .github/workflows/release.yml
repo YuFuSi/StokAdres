@@ -25,6 +25,15 @@ jobs:
 
       - run: npm ci
 
+      # Bu runner'da npm ci electron'un kendi indirme betiğini (postinstall)
+      # çalıştırmıyor; node_modules/electron/dist boş kalıyor ve
+      # electron-builder'ın kullandığı electronDist (package.json, Tuzak #8b)
+      # o klasörü bulamayınca düşüyor. install.js zaten indirilmişse hiçbir
+      # şey yapmıyor (isInstalled() kontrolü) — burada koşulsuz çalıştırmak
+      # güvenli. 2026-09-15'te ilk denemede bu adım olmadan böyle düştü.
+      - name: Electron ikili dosyasını indir
+        run: node node_modules/electron/install.js
+
       - name: .env oluştur (gerçek Frankfurt bilgileri)
         shell: bash
         run: |
