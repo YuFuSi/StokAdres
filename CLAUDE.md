@@ -54,7 +54,7 @@ src/layouts/AppLayout     Sidebar (9 link) + Ctrl+K paleti (sunucu araması) + b
 src/lib/supabase.ts       createClient<Database> (tipli)
 src/lib/pagination.ts     fetchAllRows() — PostgREST 1000 satır sınırını aşar
 src/lib/addressFormat.ts  SAF · adres biçimi: parse, normalize (h21-1 → H21-01), rota sırası
-src/lib/pickList.ts       SAF · CABA sonucu → koridor gruplu toplama listesi
+src/lib/pickList.ts       SAF · Çıktı Al düzenleri: ürüne göre (en kolili 3 adres) · rafa göre (koridor gruplu)
 src/lib/stockCodeVariants.ts  SAF · Gemini okuma hataları için stok kodu adayları
 src/lib/rowNavigation.ts  Tablo satırlarında ↑/↓/Enter
 src/lib/addressRange.ts   SAF · "G01-01 → G sonu" girişini rota anahtarına çevirir
@@ -82,7 +82,7 @@ sunucu tarafına taşındığında ekranlar hiç değişmedi.
 | Ürün Detayı | `stocks` + seçim | 🟢 Tam CRUD |
 | Adresler | `addresses` | 🟢 **Sunucu tarafı** arama + filtre + sıralama + sayfalama · adres/koli/durum **yerinde düzenleme** |
 | İşlem Geçmişi | `audit` | 🟢 Çalışıyor |
-| **Çıktı Al** (eski CABA Listesi) | `caba` | 🟢 Kaynak: CABA fişi · adres aralığı · aranıp seçilen ürünler. Düzen: **ürüne göre** (stok kodu/adı bir kez, adresler alt alta + koli) veya **rafa göre** (rota, koridor gruplu). Yazdır + Excel (salt okuma) |
+| **Çıktı Al** (eski CABA Listesi) | `caba` | 🟢 Kaynak: CABA fişi · adres aralığı · aranıp seçilen ürünler. Düzen: **ürüne göre** (ürün başına tek satır, en çok kolili 3 adres yan yana, altında koli, "+N adres daha"; Excel'de tüm adresler) veya **rafa göre** (rota, koridor gruplu). Yazdır + Excel (salt okuma) |
 | **İçe Aktar** | `import` | 🟢 Önizleme + satır içi düzeltme + toplu yazma · adres biçimi düzeltme · "bunu mu demek istediniz?" |
 | Genel Bakış | `dashboard` | 🟢 `dashboard_summary` + sayım ilerlemesi (koridorlar, son 14 gün) + yedek hatırlatıcı |
 | Adres Bul | `find` | 🟢 Sunucu tarafı arama; stok kodu / ad / barkod **ve adres** (ters arama) · son aramalar |
@@ -106,6 +106,14 @@ Faz 10.2'de de silindi: `productSearch.ts` (istemci tarafı arama; Ctrl+K sunucu
 taşınınca son kullanıcısı gitti), `productListing.filterAndSortProducts`,
 `addressRecordService.listProducts`. `tsconfig`'te artık `noUnusedLocals` ve
 `noUnusedParameters` açık — kullanılmayan kod derlemeyi kırar.
+
+2026-09-14'te: `services/export/exportTypes.ts` (pdf/docx hiç yapılmadı),
+`getProductsWithAddressRecords`, `ADDRESS_RECORDS_STORAGE_KEY`,
+`createOperationId`, boş `.gitkeep`'ler ve silinmiş ekranlardan kalan ~210
+satır CSS (`topbar`, `action-card`, `import-modal`, `settings-panel`,
+`stock-detail`, `address-detail-*`, `import-steps`…). `noUnusedLocals` CSS'i
+yakalamaz; CSS temizliği TSX'te hiç geçmeyen sınıflar taranarak yapıldı
+(dinamik öneklere dikkat: `status-dot--*`, `import-row--*`, `import-status--*`).
 
 ### 2. Çakışma sistemi istemciden kaldırıldı (bilinçli karar)
 `address_conflicts` **tablosu ve migration'ları DB'de duruyor** (0 satır), ama
@@ -201,6 +209,32 @@ teşhis "Windows Defender" idi; **doğrulanmadı**, Vite kanıtı bulununca geri
 Yan not: `npm run build:win 2>&1 | tail` gibi boru hattında çıkış kodu `tail`'in
 kodudur; build düşse de "exit 0" görünür. `set -o pipefail` kullan.
 
+### 8c. `build:win` "spawn UNKNOWN" ile düşüyorsa: Windows Smart App Control
+2026-09-14/15'te geliştirme bilgisayarında **Smart App Control açık**
+(`HKLM:\SYSTEM\CurrentControlSet\Control\CI\Policy`
+`VerifiedAndReputablePolicyState = 1`; 11 Eylül'deki 1.2.0 build'i geçmişti,
+Windows değerlendirme modundan açığa almış olmalı). electron-builder NSIS
+aşamasında uninstaller'ı çıkarmak için geçici `StokAdres Setup X.exe`'yi
+çalıştırıyor; imzasız olduğu için engelleniyor → `⨯ spawn UNKNOWN`
+(`NsisTarget.computeScriptAndSignUninstaller`). Aynı sebeple
+`release\win-unpacked\StokAdres.exe` ve `node_modules\electron\dist\electron.exe`
+de açılmıyor (ikisi de `NotSigned`).
+- **Teşhis kanıtı:** `Microsoft-Windows-CodeIntegrity/Operational` günlüğü,
+  olay 3033/3077 ("did not meet the Enterprise signing level") ve 3118
+  ("Smart App Control Block"). Defender'da tespit yok.
+- **Kod değişikliği değil**, kod da çözemez. Seçenekler kullanıcının kararı:
+  kod imzalama sertifikası, build'i Smart App Control kapalı başka bir makinede
+  ya da CI'da (GitHub Actions `windows-latest`) almak, ya da SAC'ı kapatmak
+  (Windows'ta sonradan yeniden açılamaz). **Güvenlik ayarına kendin dokunma.**
+- ⚠️ İmzasız kurulum dosyası, SAC'ı açık olan **başka bilgisayarlarda da**
+  (Harun abininki dahil) engellenebilir.
+- Bu makinede paket doğrulaması: `app.asar`'ı `@electron/asar` ile çıkar, statik
+  kontrol et (require'lar, index.html referansları, CSP meta), `dist/index.html`'i
+  başsız Edge'de `file://` ile aç (Edge imzalı, engellenmez). Edge'e
+  `--allow-file-access-from-files` ver: Vite çıktısı `type="module" crossorigin`
+  script; bu bayrak olmadan Chromium file:// modülünü CORS ile reddeder
+  (Electron reddetmez, uygulamada sorun yok).
+
 ### 9. `dist-electron/` git'te takipli DEĞİL
 Ama `package.json` `main` alanı oraya bakıyor. Build çıktısı, her build'de
 yeniden üretiliyor.
@@ -284,6 +318,16 @@ kısmi girişi anahtara çevirir (`addressRange.ts`: "G" → G0000..G9999). Biç
 dışı adres (H21-1) anahtar üretmez, aralığa **girmez**. Kanonik adres biçimi
 değişirse bu fonksiyon, `addressFormat.ts` ve `addressRange.ts` birlikte
 değişmeli.
+
+### 18. `dependencies` = kurulum paketine girer
+electron-builder `package.json` `dependencies` altındaki her paketi
+`app.asar`'a kopyalar. Renderer Vite ile `dist/`e paketlendiği ve
+`electron/main.ts` yalnızca `electron` + `node:*` kullandığı için **bütün
+paketler `devDependencies`'te** (2026-09-14). Önce asar 46,8 MB'tı; 45 MB'ı
+çalışma anında hiç yüklenmeyen `lucide-react`, `xlsx`, `react-dom`,
+`@supabase/*` idi. Main process'e gerçekten çalışma anı paketi eklenirse
+(ör. otomatik güncelleme) yalnızca o `dependencies`'e girer. Sürümler de
+sabit: `"latest"` yazma — her `npm install` sessizce büyük sürüm atlatır.
 
 ---
 
@@ -996,3 +1040,76 @@ Frankfurt, "Sürüm 1.2.0", gerçek CSV yedeği 45 sn
 (`StokAdres_yedek_2026-09-11_1645`, 4 dosya), Çıktı Al CABA fişi ürüne göre,
 N koridoru aralığı 68 konum rafa göre, Adresler yerinde düzenleme açılıp Esc
 ile değişmeden kapandı.
+
+## 2026-09-14/15 — 3 adresli çıktı ve genel temizlik (sürüm 1.3.0)
+Branch `feat/uc-adresli-cikti`.
+
+**1. Çıktı Al "ürüne göre" düzeni yeniden** (`9fb4e5f`). Harun abi bir ürünün
+bütün adreslerinin alt alta dizilmesini istemedi. İstediği düzen: stok kodu,
+stok adı, **Adres 1–2–3 yan yana, her adresin altında koli**.
+
+Kullanıcının kararları:
+- **Hangi 3 adres:** en çok kolili 3 adres. Eşit kolide rota sırası.
+- **Kalan adresler:** kâğıtta "+N adres daha" notu çıkar.
+- **Excel:** tüm adresler gider (`Adres N`/`Koli N` sütunları + `Toplam Koli`).
+- **Düzen seçimi:** eski alt alta düzen kalktı, "rafa göre" düzeni duruyor.
+- **Ürün sırası:** ürünler Adres 1'e göre rota sırasında.
+
+`pickList.ts`: `PRINTED_ADDRESS_LIMIT`, `ProductGroup.shown`/`hiddenCount`.
+
+Doğrulama:
+- **Canlı veri:** `078313` (15 adres) tek satır çıktı. H37-04 45 / H32-04 30 / J25-04 24 / "+12 adres daha", SQL sıralamasıyla birebir.
+- **Excel:** yakalanıp okundu; 15 Adres/Koli çifti, Toplam 249, CABA 40.
+- **Yazdırma:** PDF başsız Edge ile incelendi. Her adresin solunda kutu var, satır bölünmüyor, "Sayfa 1 / 1".
+
+**2. Ölü kod ve CSS** (`5147bf6`). Silinenler Tuzak #1'de. CSS için yöntem
+şuydu:
+- TSX'te hiç geçmeyen sınıflar tarandı; dinamik önekler hariç tutuldu.
+- `global.css` doğrulamalı bir betikle temizlendi. Betik her silinen satırın ölü
+  sınıf içerdiğini denetliyor, tutmazsa hiç yazmıyor. İki kez durdu, ikisinde de
+  sebep CRLF'ti.
+- **Doğrulama:** eski ve yeni CSS aynı 1280×720 görünümde, 9 ekranda
+  386 elemanın computed style'ı karşılaştırıldı, **fark 0**. Eski CSS'in gerçekten
+  yüklendiği ayrıca teyit edildi.
+- İlk karşılaştırma yanıltıcıydı: ölçümler arasında önizleme panelinin boyutu
+  değişmişti (720 → 475 px yükseklik). Farkın CSS'ten değil viewport'tan
+  geldiği görülünce aynı boyutta tekrarlandı.
+
+**3. Kurulum paketi 46,8 MB → 1,1 MB asar** (`f1582ee`, Tuzak #18). Bütün
+paketler `devDependencies`'e taşındı, `"latest"` sürümler kurulu sürümlere
+sabitlendi. Lock'ta `version`/`resolved`/`integrity` farkı yok.
+
+**4. Yerel ve GitHub temizliği** (kullanıcı onayıyla):
+- Silinen kurulum dosyası: `release/StokAdres Setup 1.1.0.exe`.
+- Silinen log: `debug.log`.
+- Silinen branch'ler: yerelde ve origin'de `feat/faz-5-10`, `feat/global-search-and-pagination`,
+  `chore/phase-3-cleanup-and-hardening`. Silmeden önce hepsinin `main`'e birleştiği yeniden doğrulandı.
+
+**5. README** güncellendi; eskiden CABA'yı İçe Aktar'ın parçası sanıyordu.
+
+**Dokunulmayanlar:**
+- `address_conflicts` ve yıkıcı RPC'ler DB'de duruyor; silmek yıkıcı migration olurdu (Tuzak #2).
+- `save-csv` IPC'si Dışa Aktar'da kullanılıyor.
+- `database.ts` üretilmiş dosya.
+
+### 🔴 1.3.0 kurulum dosyası bu bilgisayarda üretilemedi
+`build:win` iki denemede de NSIS aşamasında `spawn UNKNOWN` ile düştü. Kök
+sebep Windows **Smart App Control** (Tuzak #8c, Code Integrity günlüğüyle
+kanıtlı). Kodla ilgisi yok. Yarım kalan 600 KB'lık `StokAdres Setup 1.3.0.exe`
+ve `.7z` Harun abiye yanlışlıkla gitmesin diye silindi.
+`release\win-unpacked` 1.3.0 olarak duruyor ama bu makinede açılamıyor.
+
+**Paket yine de doğrulandı**, exe çalıştırmadan:
+- **Statik kontrol:**
+  - Asar'da yalnızca `dist`, `dist-electron`, `package.json` var.
+  - `main.js`/`preload.js` yalnızca `electron`, `node:fs/promises`, `node:path` require ediyor.
+  - `index.html` referansları mevcut, CSP meta var, paket sürümü 1.3.0.
+- **Çıkarılan `dist/index.html` başsız Edge'de açıldı:**
+  - Açılış tamam, "Sürüm 1.3.0", Çıktı Al 3 adresli düzen.
+  - İstekler yalnızca Frankfurt + Google Fonts.
+  - Konsol 0, CSP 0.
+
+**Kullanıcı kararı bekliyor:**
+- kod imzalama,
+- build'i başka bir makinede ya da CI'da almak,
+- SAC'ı kapatmak.
