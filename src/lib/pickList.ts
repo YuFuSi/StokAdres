@@ -3,9 +3,9 @@ import { aisleOf, compareAddresses } from './addressFormat'
 // Adres çıktısının iki düzeni (Çıktı Al ekranı, CABA fişi / adres aralığı /
 // seçili ürünler için ortak):
 //
-//   Ürüne göre — her ürün bir kez: stok kodu, stok adı, altında adresleri alt
-//                alta ve her adresin yanında koli. Harun abinin istediği,
-//                Faz 2'deki ilk CABA çıktısının düzeni.
+//   Ürüne göre — her ürün tek satır: stok kodu, stok adı, en çok kolili 3
+//                adres yan yana, her adresin altında koli. Kalan adresler
+//                "+N adres daha" (kâğıt) · Excel'de hepsi. Harun abinin isteği.
 //   Rafa göre  — her (ürün × konum) bir satır, depo rotası sırasında
 //                (koridor → raf → kat), koridorlara göre gruplu. Toplayıcı
 //                listeyi baştan sona tek turda yürür.
@@ -25,31 +25,41 @@ export type OutputLayout = 'product' | 'rack'
 
 // ---------------------------------------------------------------- ürüne göre
 
+/** Kâğıtta ürün başına en fazla bu kadar adres sütunu (Harun abi, 2026-09-14). */
+export const PRINTED_ADDRESS_LIMIT = 3
+
 export type ProductGroup = {
   key: string
   stockCode: string
   stockName: string
   cabaQuantity: string
-  /** Rota sırasında. */
+  /** Tüm adresler, en çok koliden aza; eşit kolide rota sırası. */
   addresses: OutputAddress[]
+  /** Kâğıda basılan ilk PRINTED_ADDRESS_LIMIT adres. */
+  shown: OutputAddress[]
+  hiddenCount: number
   totalCartons: number
 }
 
 /**
- * Ürünler en önde gelen adreslerine göre rota sırasında dizilir: toplayıcı
- * kâğıdı yukarıdan aşağı okurken yine depoyu baştan sona dolaşır.
+ * Her ürün tek satır: en çok kolisi olan adresleri Adres 1, 2, 3. Ürünler
+ * Adres 1'e göre rota sırasında dizilir; toplayıcı kâğıdı yukarıdan aşağı
+ * okurken en dolu rafları depo rotasında dolaşır.
  */
 export function buildProductList(items: OutputItem[]): ProductGroup[] {
   return items
     .filter((item) => item.addresses.length > 0)
     .map((item) => {
-      const addresses = [...item.addresses].sort((left, right) => compareAddresses(left.address, right.address))
+      const addresses = [...item.addresses].sort((left, right) =>
+        right.cartonCount - left.cartonCount || compareAddresses(left.address, right.address))
       return {
         key: item.product.id,
         stockCode: item.product.stockCode,
         stockName: item.product.stockName,
         cabaQuantity: item.cabaQuantity ?? '',
         addresses,
+        shown: addresses.slice(0, PRINTED_ADDRESS_LIMIT),
+        hiddenCount: Math.max(0, addresses.length - PRINTED_ADDRESS_LIMIT),
         totalCartons: addresses.reduce((sum, address) => sum + address.cartonCount, 0),
       }
     })
