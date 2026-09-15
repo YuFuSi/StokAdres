@@ -1,0 +1,49 @@
+name: Windows Kurulum Dosyası
+
+# Elle tetiklenir: Actions sekmesi > Windows Kurulum Dosyası > Run workflow.
+# Gerçek Frankfurt Supabase bilgileri repo secrets'tan gelir (VITE_SUPABASE_URL,
+# VITE_SUPABASE_ANON_KEY) — ci.yml'deki placeholder'ların aksine, burada
+# gerçek anon key gerekiyor çünkü çıktı gerçekten dağıtılan bir exe (Açık
+# Sorun #2: anon key zaten installer'a gömülü olarak dağıtılıyor, bilinçli).
+#
+# windows-latest kullanılıyor: bu makinede Windows Smart App Control
+# electron-builder'ın NSIS aşamasındaki imzasız ara exe'yi engelliyor
+# (CLAUDE.md Tuzak #8c). GitHub'ın runner'ında bu kısıt yok.
+on:
+  workflow_dispatch:
+
+jobs:
+  build-windows-installer:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: .env oluştur (gerçek Frankfurt bilgileri)
+        shell: bash
+        run: |
+          if [ -z "${{ secrets.VITE_SUPABASE_URL }}" ] || [ -z "${{ secrets.VITE_SUPABASE_ANON_KEY }}" ]; then
+            echo "::error::VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY repo secret'ları eksik. Settings > Secrets and variables > Actions'tan ekleyin." >&2
+            exit 1
+          fi
+          cat > .env << EOF
+          VITE_SUPABASE_URL=${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY=${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          EOF
+
+      - name: Kurulum dosyasını derle
+        run: npm run build:win
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: stokadres-windows-installer
+          path: |
+            release/*.exe
+            release/*.blockmap
+          if-no-files-found: error
