@@ -27,10 +27,6 @@ export type AuditFilter = {
   to?: string
 }
 
-export function createOperationId(): string {
-  return crypto.randomUUID()
-}
-
 export async function listAuditLogs(filter: AuditFilter = {}): Promise<AuditLog[]> {
   let query = supabase.from('audit_logs').select('*').order('created_at', { ascending: false }).limit(500)
   if (filter.action) query = query.eq('action', filter.action)
