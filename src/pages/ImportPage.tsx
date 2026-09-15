@@ -7,7 +7,16 @@ import {
   type ImportOperation,
   type OperationImportRow,
 } from '../services/operationImportService'
-import { applyRows, buildPreview, type ApplyOutcome, type PreviewRow, type PreviewStatus } from '../services/operationImportApply'
+import {
+  applyRows,
+  buildPreview,
+  deactivateAddresses,
+  findAddressesToDeactivate,
+  type ApplyOutcome,
+  type DeactivationCandidate,
+  type PreviewRow,
+  type PreviewStatus,
+} from '../services/operationImportApply'
 import { normalizeStockCode } from '../services/productLookup'
 import { suggestStockCodes, type StockCodeSuggestion } from '../services/stockCodeSuggestions'
 import './ImportPage.css'
@@ -64,12 +73,25 @@ export function ImportPage() {
   const [suggestions, setSuggestions] = useState<Map<string, StockCodeSuggestion[]>>(new Map())
   // Öneri istekleri yavaş dönebilir; yalnızca en son istenen sonuç yazılır.
   const suggestionRequest = useRef(0)
+  // "Tam liste" modu — yalnızca Adres & Koli Aktar'da. Bkz. operationImportApply.ts.
+  const [reconcile, setReconcile] = useState(false)
+  const [deactivateCandidates, setDeactivateCandidates] = useState<DeactivationCandidate[]>([])
+  const [deactivateExcluded, setDeactivateExcluded] = useState<Set<string>>(new Set())
+  const [deactivateOutcome, setDeactivateOutcome] = useState<{ applied: number; failed: number } | null>(null)
 
   useEffect(() => () => { window.clearTimeout(recheckTimer.current); abortRef.current?.abort() }, [])
 
   const reset = () => {
     setStage('choose'); setOperation(null); setPastedText(''); setSourceLabel('')
     setRows([]); setExcluded(new Set()); setOutcome(null); setError(''); setProgress(null); setSuggestions(new Map())
+    setReconcile(false); setDeactivateCandidates([]); setDeactivateExcluded(new Set()); setDeactivateOutcome(null)
+  }
+
+  const refreshDeactivationCandidates = (preview: PreviewRow[]) => {
+    if (!reconcile || operation?.id !== 'addresses') { setDeactivateCandidates([]); return }
+    findAddressesToDeactivate(preview)
+      .then((candidates) => { setDeactivateCandidates(candidates); setDeactivateExcluded(new Set()) })
+      .catch((reason: unknown) => console.error(reason))
   }
 
   const loadPreview = async (parse: () => OperationImportRow[] | Promise<OperationImportRow[]>, label: string) => {
@@ -81,6 +103,7 @@ export function ImportPage() {
       const preview = await buildPreview(operation.id, parsed)
       setRows(preview); setExcluded(new Set()); setSourceLabel(label); setStage('preview')
       refreshSuggestions(preview)
+      refreshDeactivationCandidates(preview)
     } catch (reason: unknown) {
       console.error(reason)
       setError(reason instanceof OperationImportFileError || reason instanceof Error ? reason.message : 'Veri okunamadı.')
@@ -95,7 +118,7 @@ export function ImportPage() {
     recheckTimer.current = window.setTimeout(() => {
       setIsRechecking(true)
       buildPreview(operation.id, nextRows.map(toImportRow))
-        .then((nextRows) => { setRows(nextRows); refreshSuggestions(nextRows) })
+        .then((nextRows) => { setRows(nextRows); refreshSuggestions(nextRows); refreshDeactivationCandidates(nextRows) })
         .catch((reason: unknown) => { console.error(reason); setError('Satırlar yeniden kontrol edilemedi.') })
         .finally(() => setIsRechecking(false))
     }, RECHECK_DELAY_MS)
@@ -143,17 +166,31 @@ export function ImportPage() {
 
   const applicable = rows.filter((row) => (row.status === 'ready' || row.status === 'update') && !excluded.has(row.rowNumber))
   const updateRows = rows.filter((row) => row.status === 'update')
+  const deactivateApplicable = reconcile ? deactivateCandidates.filter((candidate) => !deactivateExcluded.has(candidate.id)) : []
 
   const runApply = async () => {
-    if (!operation || applicable.length === 0) return
+    if (!operation || (applicable.length === 0 && deactivateApplicable.length === 0)) return
     const controller = new AbortController()
     abortRef.current = controller
-    setIsBusy(true); setError(''); setProgress({ done: 0, total: applicable.length })
+    setIsBusy(true); setError(''); setDeactivateOutcome(null); setProgress({ done: 0, total: applicable.length })
     try {
-      const result = await applyRows(operation.id, applicable, {
-        signal: controller.signal,
-        onProgress: (done, total) => setProgress({ done, total }),
-      })
+      let result: ApplyOutcome = { applied: 0, failed: [], aborted: false }
+      if (applicable.length > 0) {
+        result = await applyRows(operation.id, applicable, {
+          signal: controller.signal,
+          onProgress: (done, total) => setProgress({ done, total }),
+        })
+      }
+      // Yazma yarıda kesildiyse pasifleştirmeye geçilmez; o ana kadar
+      // yazılanlar kalıcı, pasifleştirme sonraki denemeye bırakılır.
+      if (!result.aborted && deactivateApplicable.length > 0) {
+        setProgress({ done: 0, total: deactivateApplicable.length })
+        const deactivateResult = await deactivateAddresses(deactivateApplicable, {
+          signal: controller.signal,
+          onProgress: (done, total) => setProgress({ done, total }),
+        })
+        setDeactivateOutcome({ applied: deactivateResult.applied, failed: deactivateResult.failed.length })
+      }
       setOutcome(result); setStage('done')
     } catch (reason: unknown) {
       console.error(reason)
@@ -211,6 +248,15 @@ export function ImportPage() {
             <button className="button button--secondary" type="button" disabled={isBusy} onClick={() => fileRef.current?.click()}><Upload size={14} /> Dosya Seç</button>
             <button className="text-action" type="button" onClick={reset}>Geri dön</button>
           </div>
+          {operation.id === 'addresses' && (
+            <label className="import-reconcile-toggle">
+              <input type="checkbox" checked={reconcile} onChange={(event) => setReconcile(event.target.checked)} />
+              <span>
+                Bu, listedeki ürünlerin <strong>tam listesi</strong> — burada geçmeyen mevcut adresleri pasif yap
+                <small>Silmez. Listede adı geçen her ürün için, listede karşılığı olmayan aktif adresler "pasif" olur; Adresler ekranından geri açılabilir. Listede hiç geçmeyen ürünlere dokunulmaz.</small>
+              </span>
+            </label>
+          )}
           {error && <p className="caba-error" role="alert">{error}</p>}
           <p className="caba-hint"><FileSpreadsheet size={14} /> Bu adım hiçbir şey yazmaz. Önce satırları göreceksiniz.</p>
         </section>
@@ -225,8 +271,10 @@ export function ImportPage() {
         <section className="caba-summary">
           <div><strong>{outcome.applied}</strong><span>kayıt yazıldı</span></div>
           <div className={outcome.failed.length ? 'caba-summary__warn' : undefined}><strong>{outcome.failed.length}</strong><span>başarısız</span></div>
+          {deactivateOutcome && <div><strong>{deactivateOutcome.applied}</strong><span>adres pasif yapıldı</span></div>}
         </section>
         {outcome.aborted && <p className="import-aborted" role="status">İşlem yarıda durduruldu. Yukarıda yazılan kayıtlar kalıcıdır.</p>}
+        {deactivateOutcome && deactivateOutcome.failed > 0 && <p className="import-aborted" role="status">{deactivateOutcome.failed} adres pasif yapılamadı.</p>}
         {outcome.failed.length > 0 && (
           <section className="import-failures">
             <h2>Başarısız satırlar</h2>
@@ -375,13 +423,62 @@ export function ImportPage() {
         </table>
       </div>
 
+      {reconcile && deactivateCandidates.length > 0 && (
+        <section className="import-deactivate" aria-label="Pasif yapılacak adresler">
+          <h2>
+            Pasif yapılacak adresler <span>{deactivateApplicable.length} / {deactivateCandidates.length}</span>
+          </h2>
+          <p className="import-deactivate__hint">
+            Bu adresler <strong>silinmiyor</strong> — "pasif" olarak işaretlenecek, Adresler ekranından istediğiniz zaman geri açabilirsiniz.
+            Yukarıdaki listede geçen ürünlerde, listede karşılığı olmayan aktif adresler bunlar.
+          </p>
+          <div className="import-deactivate__actions">
+            <button className="button button--secondary" type="button" onClick={() => setDeactivateExcluded(new Set())}>Hepsini seç</button>
+            <button className="button button--secondary" type="button"
+              onClick={() => setDeactivateExcluded(new Set(deactivateCandidates.map((candidate) => candidate.id)))}>
+              Hiçbirini pasif yapma
+            </button>
+          </div>
+          <div className="import-preview-table">
+            <table>
+              <thead>
+                <tr>
+                  <th className="import-col-check" />
+                  <th>Stok kodu</th>
+                  <th>Stok adı</th>
+                  <th>Adres</th>
+                  <th>Koli</th>
+                </tr>
+              </thead>
+              <tbody>
+                {deactivateCandidates.map((candidate) => {
+                  const isExcluded = deactivateExcluded.has(candidate.id)
+                  return (
+                    <tr key={candidate.id} className={isExcluded ? 'import-row import-row--excluded' : 'import-row'}>
+                      <td className="import-col-check">
+                        <input type="checkbox" checked={!isExcluded} aria-label={`${candidate.stockCode} · ${candidate.address} adresini pasif yap`}
+                          onChange={() => setDeactivateExcluded((current) => { const next = new Set(current); if (next.has(candidate.id)) next.delete(candidate.id); else next.add(candidate.id); return next })} />
+                      </td>
+                      <td><strong>{candidate.stockCode}</strong></td>
+                      <td>{candidate.stockName}</td>
+                      <td className="import-cell--mono">{candidate.address}</td>
+                      <td>{candidate.cartonCount}</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+
       {error && <p className="caba-error" role="alert">{error}</p>}
 
       <div className="import-confirm">
         <span>
-          {applicable.length > 0
-            ? <><strong>{applicable.length}</strong> satır uygulanacak.</>
-            : 'Uygulanacak satır yok.'}
+          {applicable.length > 0 && <><strong>{applicable.length}</strong> satır uygulanacak. </>}
+          {deactivateApplicable.length > 0 && <><strong>{deactivateApplicable.length}</strong> adres pasif yapılacak. </>}
+          {applicable.length === 0 && deactivateApplicable.length === 0 && 'Uygulanacak bir şey yok.'}
         </span>
         <div>
           {progress
@@ -391,7 +488,7 @@ export function ImportPage() {
               </>
             : <>
                 <button className="button button--secondary" type="button" onClick={reset} disabled={isBusy}><X size={14} /> İptal</button>
-                <button className="button button--primary" type="button" disabled={applicable.length === 0 || isBusy || isRechecking} onClick={() => void runApply()}>
+                <button className="button button--primary" type="button" disabled={(applicable.length === 0 && deactivateApplicable.length === 0) || isBusy || isRechecking} onClick={() => void runApply()}>
                   {isBusy ? 'Kaydediliyor…' : 'Uygula'}
                 </button>
               </>}

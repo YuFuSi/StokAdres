@@ -65,6 +65,26 @@ export type ApplyOptions = {
   signal?: AbortSignal
 }
 
+/**
+ * "Tam liste" modu: listedeki bir üründe hâlâ aktif olup listede karşılığı
+ * olmayan adres. SİLİNMEZ — apply sırasında is_active=false yapılır, Adresler
+ * ekranından geri açılabilir. 2026-09-15: kullanıcı "sıfırdan yükleyeceğim"
+ * dedi, toplu silme yerine (yıkıcı RPC'ler bilerek kapalı, Tuzak #2) bu yol
+ * seçildi.
+ */
+export type DeactivationCandidate = {
+  id: string
+  stockCode: string
+  stockName: string
+  address: string
+  cartonCount: number
+}
+
+export type DeactivateOutcome = {
+  applied: number
+  failed: Array<{ id: string; stockCode: string; message: string }>
+}
+
 // Tek istekte yazılacak satır sayısı. Supabase dizi insert'ini tek sorguya
 // çeviriyor; 500 satır = 1 istek. Eskiden satır başına 1-4 istek atılıyordu.
 const WRITE_BATCH_SIZE = 500
@@ -182,6 +202,71 @@ export async function buildPreview(operation: ImportOperation, rows: OperationIm
       detail: `${existing.cartonCount} → ${row.cartonCount}`,
     }
   })
+}
+
+/**
+ * "Tam liste" modu için: önizlemedeki (ürünü bulunmuş) satırların kapsadığı
+ * ürünlerde, hâlâ aktif olup bu listede karşılığı olmayan adresleri bulur.
+ *
+ * Yalnızca listede GEÇEN ürünler taranır — listede hiç adı geçmeyen bir ürünün
+ * adresine dokunulmaz. Böylece kısmi bir liste (ör. tek koridorun sayımı)
+ * yapıştırıldığında diğer ürünlerin adresleri güvenle kalır. Bir adresin
+ * "korunması" için satırın durumu (ready/update/unchanged) önemli değil,
+ * yalnızca o adresin listede geçip geçmediği önemli — kullanıcı bir güncelleme
+ * satırını uygulamadan atlasa bile (İçe Aktar'da "atla" seçse) adres listede
+ * yazılı olduğu için pasife düşmez.
+ */
+export async function findAddressesToDeactivate(rows: PreviewRow[]): Promise<DeactivationCandidate[]> {
+  const productRows = rows.filter((row): row is PreviewRow & { product: ProductLite } => Boolean(row.product))
+  const productIds = [...new Set(productRows.map((row) => row.product.id))]
+  if (productIds.length === 0) return []
+
+  const addressesByProductId = await findActiveAddresses(productIds)
+  const keptAddressesByProductId = new Map<string, Set<string>>()
+  const productById = new Map<string, ProductLite>()
+  for (const row of productRows) {
+    productById.set(row.product.id, row.product)
+    const key = normalizeAddress(row.writeAddress)
+    if (!key) continue
+    const kept = keptAddressesByProductId.get(row.product.id) ?? new Set<string>()
+    kept.add(key)
+    keptAddressesByProductId.set(row.product.id, kept)
+  }
+
+  const candidates: DeactivationCandidate[] = []
+  for (const productId of productIds) {
+    const kept = keptAddressesByProductId.get(productId) ?? new Set()
+    const product = productById.get(productId)!
+    for (const record of addressesByProductId.get(productId) ?? []) {
+      if (kept.has(normalizeAddress(record.address))) continue
+      candidates.push({ id: record.id, stockCode: product.stockCode, stockName: product.stockName, address: record.address, cartonCount: record.cartonCount })
+    }
+  }
+  return candidates.sort((left, right) => left.stockCode.localeCompare(right.stockCode, 'tr-TR') || left.address.localeCompare(right.address, 'tr-TR'))
+}
+
+/** findAddressesToDeactivate'in bulduğu adresleri pasif yapar (is_active=false). Silmez. */
+export async function deactivateAddresses(candidates: DeactivationCandidate[], options: ApplyOptions = {}): Promise<DeactivateOutcome> {
+  const outcome: DeactivateOutcome = { applied: 0, failed: [] }
+  const total = candidates.length
+  let done = 0
+  for (let index = 0; index < candidates.length; index += WRITE_BATCH_SIZE) {
+    throwIfAborted(options.signal)
+    const batch = candidates.slice(index, index + WRITE_BATCH_SIZE)
+    const { error } = await supabase.from('address_records').update({ is_active: false }).in('id', batch.map((candidate) => candidate.id))
+    if (error) {
+      for (const candidate of batch) {
+        const { error: rowError } = await supabase.from('address_records').update({ is_active: false }).eq('id', candidate.id)
+        if (rowError) outcome.failed.push({ id: candidate.id, stockCode: candidate.stockCode, message: rowError.message })
+        else outcome.applied += 1
+      }
+    } else {
+      outcome.applied += batch.length
+    }
+    done += batch.length
+    options.onProgress?.(done, total)
+  }
+  return outcome
 }
 
 // ---------------------------------------------------------------- UYGULAMA

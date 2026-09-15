@@ -83,6 +83,24 @@
 /* Varyanttan gelen (güvenilir) öneri öne çıkar. */
 .import-suggestion--strong { color: var(--teal); border-color: var(--teal); font-weight: 600; }
 
+/* --- "tam liste" modu: girdi ekranındaki onay kutusu --- */
+.import-reconcile-toggle { display: flex; align-items: flex-start; gap: 10px; margin-top: 16px; padding: 12px 14px; background: var(--surface-muted); border: 1px solid var(--line); border-radius: 6px; font-size: 12px; cursor: pointer; }
+.import-reconcile-toggle input { margin-top: 2px; cursor: pointer; }
+.import-reconcile-toggle strong { color: var(--ink); }
+.import-reconcile-toggle small { display: block; margin-top: 3px; color: var(--muted); font-size: 11px; line-height: 1.5; }
+
+/* --- "tam liste" modu: pasif yapılacak adresler (operationImportApply.ts
+   findAddressesToDeactivate). Silmiyor, ama toplu bir etkisi olabileceği için
+   diğer önizleme bölümlerinden görsel olarak ayrışıyor (danger tonu). --- */
+.import-deactivate { margin-top: 22px; padding: 16px; background: var(--danger-soft); border: 1px solid var(--danger-soft); border-radius: 6px; }
+.import-deactivate h2 { display: flex; align-items: center; gap: 9px; margin: 0; font-size: 14px; }
+.import-deactivate h2 span { padding: 2px 8px; color: var(--danger); background: var(--surface); border-radius: 999px; font-size: 11px; font-weight: 700; }
+.import-deactivate__hint { margin: 6px 0 0; color: var(--ink); font-size: 12px; line-height: 1.5; }
+.import-deactivate__actions { display: flex; gap: 8px; margin-top: 12px; }
+.import-deactivate__actions .button { padding: 6px 11px; font-size: 12px; }
+.import-deactivate .import-preview-table { max-height: 320px; background: var(--surface); border-radius: 6px; overflow: hidden; }
+
 @media (max-width: 820px) {
   .import-conflict-bar { align-items: flex-start; flex-direction: column; }
+  .import-deactivate__actions { flex-wrap: wrap; }
 }
