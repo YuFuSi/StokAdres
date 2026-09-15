@@ -348,7 +348,6 @@ function AddressOutput({ result, onReset }: { result: OutputResult; onReset: () 
   const [isExporting, setIsExporting] = useState(false)
 
   const { items, misses, notes } = result
-  const showCaba = result.source === 'caba'
   const products = buildProductList(items)
   const { rows, groups } = buildPickList(items)
   const totalCartons = rows.reduce((sum, row) => sum + row.cartonCount, 0)
@@ -372,13 +371,12 @@ function AddressOutput({ result, onReset }: { result: OutputResult; onReset: () 
     setIsExporting(true)
     setExcelMessage('')
     try {
-      const withCaba = (row: ExportRow, quantity: string): ExportRow => showCaba ? { ...row, CABA: quantity } : row
       const listSheet: ExportSheet = layout === 'product'
-        ? { name: 'Ürüne göre', rows: productSheetRows(products, showCaba) }
-        : { name: 'Rafa göre', rows: rows.map((row) => withCaba({ Adres: row.address, 'Stok Kodu': row.stockCode, 'Stok Adı': row.stockName, Koli: row.cartonCount }, row.cabaQuantity)) }
+        ? { name: 'Ürüne göre', rows: productSheetRows(products) }
+        : { name: 'Rafa göre', rows: rows.map((row) => ({ Adres: row.address, 'Stok Kodu': row.stockCode, 'Stok Adı': row.stockName, Koli: row.cartonCount })) }
       const sheets: ExportSheet[] = [listSheet]
       if (misses.length > 0) {
-        sheets.push({ name: 'Bulunamayanlar', rows: misses.map((miss) => withCaba({ 'Stok Kodu': miss.stockCode, Durum: missText(miss) }, miss.cabaQuantity)) })
+        sheets.push({ name: 'Bulunamayanlar', rows: misses.map((miss) => ({ 'Stok Kodu': miss.stockCode, Durum: missText(miss) })) })
       }
       const saved = await exportWorkbook(sheets, `StokAdres_adres_listesi_${fileStamp(new Date())}.xlsx`)
       setExcelMessage(saved ? 'Excel dosyası kaydedildi.' : 'Kaydetme iptal edildi.')
@@ -389,8 +387,6 @@ function AddressOutput({ result, onReset }: { result: OutputResult; onReset: () 
       setIsExporting(false)
     }
   }
-
-  const columnCount = showCaba ? 6 : 5
 
   return (
     <main className="operations-page caba-page caba-page--results">
@@ -430,20 +426,16 @@ function AddressOutput({ result, onReset }: { result: OutputResult; onReset: () 
                 <th>Stok kodu</th>
                 <th>Stok adı</th>
                 {ADDRESS_SLOTS.map((slot) => <th key={slot} className="caba-slot-cell">Adres {slot + 1}</th>)}
-                {showCaba && <th>CABA</th>}
+                <th className="caba-note-cell" aria-hidden="true" />
               </tr>
             </thead>
             <tbody>
               {products.map((group) => (
                 <tr key={group.key} className="caba-row">
-                  <td className="caba-product__code">
-                    <strong>{group.stockCode}</strong>
-                    {group.addresses.length > 1 && <small className="caba-split">{group.addresses.length} konum · {formatNumber(group.totalCartons)} koli</small>}
-                  </td>
+                  <td className="caba-product__code"><strong>{group.stockCode}</strong></td>
                   <td className="caba-product__name">{group.stockName}</td>
                   {ADDRESS_SLOTS.map((slot) => {
                     const address = group.shown[slot]
-                    const isLast = slot === PRINTED_ADDRESS_LIMIT - 1
                     return (
                       <td key={slot} className="caba-slot-cell">
                         {address
@@ -457,11 +449,10 @@ function AddressOutput({ result, onReset }: { result: OutputResult; onReset: () 
                             </div>
                           )
                           : <span className="cell-empty">—</span>}
-                        {isLast && group.hiddenCount > 0 && <small className="caba-slot__more">+{group.hiddenCount} adres daha</small>}
                       </td>
                     )
                   })}
-                  {showCaba && <td className="caba-quantity">{group.cabaQuantity || '—'}</td>}
+                  <td className="caba-note-cell">{group.hiddenCount > 0 ? `+${group.hiddenCount} adres daha` : ''}</td>
                 </tr>
               ))}
             </tbody>
@@ -480,13 +471,12 @@ function AddressOutput({ result, onReset }: { result: OutputResult; onReset: () 
                 <th>Stok kodu</th>
                 <th>Stok adı</th>
                 <th>Koli</th>
-                {showCaba && <th>CABA</th>}
               </tr>
             </thead>
             {groups.map((group) => (
               <tbody key={group.aisle ?? 'other'}>
                 <tr className="caba-aisle">
-                  <th colSpan={columnCount} scope="rowgroup">
+                  <th colSpan={5} scope="rowgroup">
                     {group.aisle ? `Koridor ${group.aisle}` : 'Diğer adresler'}
                     <span>{group.rows.length} konum</span>
                   </th>
@@ -501,7 +491,6 @@ function AddressOutput({ result, onReset }: { result: OutputResult; onReset: () 
                     </td>
                     <td>{row.stockName}</td>
                     <td className="caba-carton">{formatNumber(row.cartonCount)}</td>
-                    {showCaba && <td className="caba-quantity">{row.cabaQuantity || '—'}</td>}
                   </tr>
                 ))}
               </tbody>
@@ -515,13 +504,12 @@ function AddressOutput({ result, onReset }: { result: OutputResult; onReset: () 
           <h2>Adresi bulunamayanlar <span>{misses.length}</span></h2>
           <p className="caba-misses__hint">Bu stoklar listede vardı ama depoda konumu yok. Sayım sırasında adreslenmeleri gerekiyor.</p>
           <table className="caba-table caba-table--misses">
-            <thead><tr><th>Stok kodu</th><th>Durum</th>{showCaba && <th>CABA</th>}</tr></thead>
+            <thead><tr><th>Stok kodu</th><th>Durum</th></tr></thead>
             <tbody>
               {misses.map((miss) => (
                 <tr key={`${miss.rowNumber}-${miss.stockCode}`}>
                   <td><strong>{miss.stockCode}</strong></td>
                   <td>{missText(miss)}</td>
-                  {showCaba && <td className="caba-quantity">{miss.cabaQuantity || '—'}</td>}
                 </tr>
               ))}
             </tbody>
@@ -542,7 +530,7 @@ function AddressOutput({ result, onReset }: { result: OutputResult; onReset: () 
  * Eksik hücreler '' ile doldurulur; json_to_sheet başlıkları ilk satırın
  * anahtar sırasından ürettiği için her satır aynı anahtarlara sahip olmalı.
  */
-function productSheetRows(products: ProductGroup[], showCaba: boolean): ExportRow[] {
+function productSheetRows(products: ProductGroup[]): ExportRow[] {
   const slotCount = products.reduce((max, group) => Math.max(max, group.addresses.length), 0)
   return products.map((group) => {
     const row: ExportRow = { 'Stok Kodu': group.stockCode, 'Stok Adı': group.stockName }
@@ -552,7 +540,6 @@ function productSheetRows(products: ProductGroup[], showCaba: boolean): ExportRo
       row[`Koli ${index + 1}`] = address?.cartonCount ?? ''
     }
     row['Toplam Koli'] = group.totalCartons
-    if (showCaba) row.CABA = group.cabaQuantity
     return row
   })
 }
