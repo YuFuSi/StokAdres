@@ -48,7 +48,7 @@ const CHOICES: OperationChoice[] = [
 const STATUS_LABEL: Record<PreviewStatus, string> = {
   ready: 'Yazılacak',
   update: 'Güncellenecek',
-  remove: 'Kaldırılacak',
+  remove: 'Silinecek',
   unchanged: 'Değişmeyecek',
   missing: 'Stok yok',
   invalid: 'Hatalı',
@@ -322,7 +322,7 @@ export function ImportPage() {
       <section className="import-counts" aria-label="Önizleme özeti">
         <span className="import-count import-count--ready">{counts.ready} yazılacak</span>
         {counts.update > 0 && <span className="import-count import-count--update">{counts.update} güncellenecek</span>}
-        {counts.remove > 0 && <span className="import-count import-count--invalid">{counts.remove} kaldırılacak</span>}
+        {counts.remove > 0 && <span className="import-count import-count--invalid">{counts.remove} silinecek</span>}
         {counts.unchanged > 0 && <span className="import-count">{counts.unchanged} değişmeyecek</span>}
         {counts.missing > 0 && <span className="import-count import-count--missing">{counts.missing} stok yok</span>}
         {counts.invalid > 0 && <span className="import-count import-count--invalid">{counts.invalid} hatalı</span>}
@@ -349,7 +349,7 @@ export function ImportPage() {
 
       {counts.remove > 0 && (
         <div className="import-conflict-bar import-conflict-bar--danger">
-          <span><strong>{counts.remove}</strong> satırda koli adedi 0 — bu adresler <strong>kaldırılacak</strong> (silinmez, pasif yapılır; Adresler ekranından geri açılabilir).</span>
+          <span><strong>{counts.remove}</strong> satırda koli adedi 0 — bu adres kayıtları <strong>kalıcı olarak silinecek</strong>. Geri alınamaz.</span>
           <div>
             <button className="button button--secondary" type="button"
               onClick={() => setExcluded((current) => { const next = new Set(current); removeRows.forEach((row) => next.add(row.rowNumber)); return next })}>
@@ -357,7 +357,7 @@ export function ImportPage() {
             </button>
             <button className="button button--secondary" type="button"
               onClick={() => setExcluded((current) => { const next = new Set(current); removeRows.forEach((row) => next.delete(row.rowNumber)); return next })}>
-              Hepsini kaldır
+              Hepsini sil
             </button>
           </div>
         </div>

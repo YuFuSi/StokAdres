@@ -20,7 +20,7 @@ import {
 export type PreviewStatus =
   | 'ready'      // yazılacak
   | 'update'     // mevcut kayıt güncellenecek (eski → yeni)
-  | 'remove'     // 'addresses' işleminde: koli 0, mevcut kayıt kaldırılacak (pasif)
+  | 'remove'     // 'addresses' işleminde: koli 0, mevcut kayıt SİLİNECEK
   | 'unchanged'  // zaten aynı, atlanacak
   | 'missing'    // ilgili ürün kayıtlı değil
   | 'invalid'    // satır kendi içinde hatalı
@@ -190,12 +190,12 @@ export async function buildPreview(operation: ImportOperation, rows: OperationIm
     const existing = (addressesByProductId.get(product.id) ?? [])
       .find((record) => normalizeAddress(record.address) === normalizeAddress(writeAddress))
 
-    // Koli 0: "burada artık yok" demek. Kayıt varsa kaldırılır (pasif yapılır,
-    // silinmez); yoksa yapılacak bir şey olmadığı için sessizce atlanır — 0
-    // koli'lik yeni bir adres asla yazılmaz.
+    // Koli 0: "burada artık yok" demek. Kayıt varsa GERÇEKTEN SİLİNİR
+    // (Adresler ekranındaki tekil "Sil" ile aynı yol); yoksa yapılacak bir şey
+    // olmadığı için sessizce atlanır — 0 koli'lik yeni bir adres asla yazılmaz.
     if (row.cartonCount === 0) {
       if (!existing) return { ...base, product, status: 'unchanged' as const, detail: 'Zaten kayıtlı değil' }
-      return { ...base, product, existingRecord: { id: existing.id, cartonCount: existing.cartonCount }, status: 'remove' as const, detail: `${existing.cartonCount} → 0, kayıt kaldırılacak` }
+      return { ...base, product, existingRecord: { id: existing.id, cartonCount: existing.cartonCount }, status: 'remove' as const, detail: `${existing.cartonCount} → 0, kayıt silinecek` }
     }
 
     if (!existing) return { ...base, product, status: 'ready' as const, detail: 'Yeni adres' }
@@ -398,8 +398,7 @@ async function applyAddresses(
   // bazında gider, çünkü her satırın değeri farklı.
   const newRows = rows.filter((row) => row.status === 'ready')
   const updateRows = rows.filter((row) => row.status === 'update')
-  // Koli 0: kayıt silinmez, pasif yapılır (bkz. buildPreview'daki 'remove' notu
-  // ve deactivateAddresses/findAddressesToDeactivate — aynı desen).
+  // Koli 0: kayıt gerçekten silinir (bkz. buildPreview'daki 'remove' notu).
   const removeRows = rows.filter((row) => row.status === 'remove')
 
   for (const batch of toBatches(newRows)) {
@@ -433,9 +432,12 @@ async function applyAddresses(
 
   for (const row of removeRows) {
     throwIfAborted(signal)
+    // Gerçekten silinir (pasif değil) — Adresler ekranındaki tekil "Sil"
+    // butonuyla aynı yol (addressRecordService.delete), burada toplu ve
+    // içe aktarma akışından. Kullanıcı isteği: 2026-09-17.
     const { error } = await supabase
       .from('address_records')
-      .update({ is_active: false })
+      .delete()
       .eq('id', row.existingRecord!.id)
     if (error) outcome.failed.push({ rowNumber: row.rowNumber, stockCode: row.stockCode, message: error.message })
     else outcome.applied += 1
