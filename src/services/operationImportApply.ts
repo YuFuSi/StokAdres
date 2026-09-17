@@ -20,6 +20,7 @@ import {
 export type PreviewStatus =
   | 'ready'      // yazılacak
   | 'update'     // mevcut kayıt güncellenecek (eski → yeni)
+  | 'remove'     // 'addresses' işleminde: koli 0, mevcut kayıt kaldırılacak (pasif)
   | 'unchanged'  // zaten aynı, atlanacak
   | 'missing'    // ilgili ürün kayıtlı değil
   | 'invalid'    // satır kendi içinde hatalı
@@ -188,6 +189,14 @@ export async function buildPreview(operation: ImportOperation, rows: OperationIm
     // operation === 'addresses'
     const existing = (addressesByProductId.get(product.id) ?? [])
       .find((record) => normalizeAddress(record.address) === normalizeAddress(writeAddress))
+
+    // Koli 0: "burada artık yok" demek. Kayıt varsa kaldırılır (pasif yapılır,
+    // silinmez); yoksa yapılacak bir şey olmadığı için sessizce atlanır — 0
+    // koli'lik yeni bir adres asla yazılmaz.
+    if (row.cartonCount === 0) {
+      if (!existing) return { ...base, product, status: 'unchanged' as const, detail: 'Zaten kayıtlı değil' }
+      return { ...base, product, existingRecord: { id: existing.id, cartonCount: existing.cartonCount }, status: 'remove' as const, detail: `${existing.cartonCount} → 0, kayıt kaldırılacak` }
+    }
 
     if (!existing) return { ...base, product, status: 'ready' as const, detail: 'Yeni adres' }
     if (existing.cartonCount === row.cartonCount) {
@@ -387,8 +396,11 @@ async function applyAddresses(
 ) {
   // Yeni adresler toplu yazılabilir; mevcut kayıtların koli güncellemesi satır
   // bazında gider, çünkü her satırın değeri farklı.
-  const newRows = rows.filter((row) => !row.existingRecord)
-  const updateRows = rows.filter((row) => row.existingRecord)
+  const newRows = rows.filter((row) => row.status === 'ready')
+  const updateRows = rows.filter((row) => row.status === 'update')
+  // Koli 0: kayıt silinmez, pasif yapılır (bkz. buildPreview'daki 'remove' notu
+  // ve deactivateAddresses/findAddressesToDeactivate — aynı desen).
+  const removeRows = rows.filter((row) => row.status === 'remove')
 
   for (const batch of toBatches(newRows)) {
     throwIfAborted(signal)
@@ -413,6 +425,17 @@ async function applyAddresses(
     const { error } = await supabase
       .from('address_records')
       .update({ carton_count: row.cartonCount! })
+      .eq('id', row.existingRecord!.id)
+    if (error) outcome.failed.push({ rowNumber: row.rowNumber, stockCode: row.stockCode, message: error.message })
+    else outcome.applied += 1
+    advance(1)
+  }
+
+  for (const row of removeRows) {
+    throwIfAborted(signal)
+    const { error } = await supabase
+      .from('address_records')
+      .update({ is_active: false })
       .eq('id', row.existingRecord!.id)
     if (error) outcome.failed.push({ rowNumber: row.rowNumber, stockCode: row.stockCode, message: error.message })
     else outcome.applied += 1

@@ -21,6 +21,8 @@
 }
 .import-conflict-bar > div { display: flex; gap: 8px; flex: 0 0 auto; }
 .import-conflict-bar .button { padding: 6px 11px; font-size: 12px; }
+/* Koli 0 → kaldırma: warning'den daha ciddi bir etki, danger tonu. */
+.import-conflict-bar--danger { color: var(--danger); background: var(--danger-soft); border-color: var(--danger-soft); }
 
 /* --- onizleme tablosu --- */
 .import-page .import-preview-table { margin-top: 16px; max-height: 520px; }
@@ -34,6 +36,7 @@
 .import-row td { vertical-align: middle; }
 .import-row--invalid { background: #fdf6f5; }
 .import-row--missing { background: #fffaf0; }
+.import-row--remove { background: var(--danger-soft); }
 .import-row--unchanged { color: var(--muted); }
 .import-row--unchanged .import-cell { color: var(--muted); }
 /* Disarida birakilan satir gorsel olarak sonuktur ama okunur kalir. */
@@ -58,6 +61,7 @@
 .import-status--unchanged { color: #68716f; background: #eef0ee; }
 .import-status--missing { color: #9b6e1c; background: #fff4dc; }
 .import-status--invalid { color: var(--danger); background: #fae9e6; }
+.import-status--remove { color: var(--danger); background: #fae9e6; }
 .import-detail { display: block; margin-top: 4px; color: var(--muted); font-size: 11px; line-height: 1.4; }
 
 /* --- onay serifi --- */

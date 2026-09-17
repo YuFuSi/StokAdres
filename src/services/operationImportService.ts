@@ -70,7 +70,11 @@ export function validateOperationRow(operation: ImportOperation, row: OperationI
   if (operation === 'barcodes' && !row.barcode) errors.push('Barkod boş.')
   if (operation === 'addresses') {
     if (!row.address) errors.push('Adres boş.')
-    if (!Number.isSafeInteger(row.cartonCount) || (row.cartonCount ?? 0) <= 0) errors.push('Koli adedi pozitif tam sayı olmalı.')
+    // 0 bilerek geçerli: mevcut kaydı kaldırmak için kullanılıyor (bkz.
+    // operationImportApply.ts, PreviewStatus 'remove'). Negatif/ondalık/boş hâlâ hatalı.
+    if (row.cartonCount === null || !Number.isSafeInteger(row.cartonCount) || row.cartonCount < 0) {
+      errors.push('Koli adedi 0 veya pozitif bir tam sayı olmalı.')
+    }
   }
   return errors
 }

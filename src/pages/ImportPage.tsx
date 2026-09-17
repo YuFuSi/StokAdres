@@ -48,6 +48,7 @@ const CHOICES: OperationChoice[] = [
 const STATUS_LABEL: Record<PreviewStatus, string> = {
   ready: 'Yazılacak',
   update: 'Güncellenecek',
+  remove: 'Kaldırılacak',
   unchanged: 'Değişmeyecek',
   missing: 'Stok yok',
   invalid: 'Hatalı',
@@ -164,8 +165,9 @@ export function ImportPage() {
     })
   }
 
-  const applicable = rows.filter((row) => (row.status === 'ready' || row.status === 'update') && !excluded.has(row.rowNumber))
+  const applicable = rows.filter((row) => (row.status === 'ready' || row.status === 'update' || row.status === 'remove') && !excluded.has(row.rowNumber))
   const updateRows = rows.filter((row) => row.status === 'update')
+  const removeRows = rows.filter((row) => row.status === 'remove')
   const deactivateApplicable = reconcile ? deactivateCandidates.filter((candidate) => !deactivateExcluded.has(candidate.id)) : []
 
   const runApply = async () => {
@@ -297,6 +299,7 @@ export function ImportPage() {
   const counts = {
     ready: rows.filter((row) => row.status === 'ready').length,
     update: updateRows.length,
+    remove: removeRows.length,
     unchanged: rows.filter((row) => row.status === 'unchanged').length,
     missing: rows.filter((row) => row.status === 'missing').length,
     invalid: rows.filter((row) => row.status === 'invalid').length,
@@ -319,6 +322,7 @@ export function ImportPage() {
       <section className="import-counts" aria-label="Önizleme özeti">
         <span className="import-count import-count--ready">{counts.ready} yazılacak</span>
         {counts.update > 0 && <span className="import-count import-count--update">{counts.update} güncellenecek</span>}
+        {counts.remove > 0 && <span className="import-count import-count--invalid">{counts.remove} kaldırılacak</span>}
         {counts.unchanged > 0 && <span className="import-count">{counts.unchanged} değişmeyecek</span>}
         {counts.missing > 0 && <span className="import-count import-count--missing">{counts.missing} stok yok</span>}
         {counts.invalid > 0 && <span className="import-count import-count--invalid">{counts.invalid} hatalı</span>}
@@ -338,6 +342,22 @@ export function ImportPage() {
             <button className="button button--secondary" type="button"
               onClick={() => setExcluded((current) => { const next = new Set(current); updateRows.forEach((row) => next.delete(row.rowNumber)); return next })}>
               Hepsini üzerine yaz
+            </button>
+          </div>
+        </div>
+      )}
+
+      {counts.remove > 0 && (
+        <div className="import-conflict-bar import-conflict-bar--danger">
+          <span><strong>{counts.remove}</strong> satırda koli adedi 0 — bu adresler <strong>kaldırılacak</strong> (silinmez, pasif yapılır; Adresler ekranından geri açılabilir).</span>
+          <div>
+            <button className="button button--secondary" type="button"
+              onClick={() => setExcluded((current) => { const next = new Set(current); removeRows.forEach((row) => next.add(row.rowNumber)); return next })}>
+              Hepsini atla
+            </button>
+            <button className="button button--secondary" type="button"
+              onClick={() => setExcluded((current) => { const next = new Set(current); removeRows.forEach((row) => next.delete(row.rowNumber)); return next })}>
+              Hepsini kaldır
             </button>
           </div>
         </div>
@@ -382,7 +402,7 @@ export function ImportPage() {
           </thead>
           <tbody>
             {rows.map((row) => {
-              const selectable = row.status === 'ready' || row.status === 'update'
+              const selectable = row.status === 'ready' || row.status === 'update' || row.status === 'remove'
               const isExcluded = excluded.has(row.rowNumber)
               return (
                 <tr key={row.rowNumber} className={`import-row import-row--${row.status}${isExcluded ? ' import-row--excluded' : ''}`}>

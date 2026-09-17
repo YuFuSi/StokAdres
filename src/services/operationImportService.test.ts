@@ -78,12 +78,14 @@ describe('validateOperationRow', () => {
     }
   })
 
-  it('adres isleminde adres ve pozitif tam sayi koli ister', () => {
+  it('adres isleminde adres ve 0 ya da pozitif tam sayi koli ister', () => {
     expect(validateOperationRow('addresses', row({ address: '', cartonCount: 5 }))).toContain('Adres boş.')
-    expect(validateOperationRow('addresses', row({ address: 'A1', cartonCount: 0 }))).toContain('Koli adedi pozitif tam sayı olmalı.')
-    expect(validateOperationRow('addresses', row({ address: 'A1', cartonCount: -3 }))).toContain('Koli adedi pozitif tam sayı olmalı.')
-    expect(validateOperationRow('addresses', row({ address: 'A1', cartonCount: 1.5 }))).toContain('Koli adedi pozitif tam sayı olmalı.')
-    expect(validateOperationRow('addresses', row({ address: 'A1', cartonCount: NaN }))).toContain('Koli adedi pozitif tam sayı olmalı.')
+    expect(validateOperationRow('addresses', row({ address: 'A1', cartonCount: -3 }))).toContain('Koli adedi 0 veya pozitif bir tam sayı olmalı.')
+    expect(validateOperationRow('addresses', row({ address: 'A1', cartonCount: 1.5 }))).toContain('Koli adedi 0 veya pozitif bir tam sayı olmalı.')
+    expect(validateOperationRow('addresses', row({ address: 'A1', cartonCount: NaN }))).toContain('Koli adedi 0 veya pozitif bir tam sayı olmalı.')
+    expect(validateOperationRow('addresses', row({ address: 'A1', cartonCount: null }))).toContain('Koli adedi 0 veya pozitif bir tam sayı olmalı.')
+    // 0: gecerli, mevcut adresi kaldirmak icin kullaniliyor (operationImportApply.ts, 'remove').
+    expect(validateOperationRow('addresses', row({ address: 'A1', cartonCount: 0 }))).toEqual([])
     expect(validateOperationRow('addresses', row({ address: 'A1', cartonCount: 4 }))).toEqual([])
   })
 
