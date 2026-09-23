@@ -461,6 +461,7 @@ export type Database = {
       }
       search_address_records: {
         Args: {
+          p_aisle?: string
           p_filter?: string
           p_limit?: number
           p_offset?: number

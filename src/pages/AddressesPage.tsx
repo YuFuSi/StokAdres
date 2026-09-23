@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { ChevronLeft, ChevronRight, MapPin, Plus, Search } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Download, MapPin, Plus, Search } from 'lucide-react'
 import { addressRecordService } from '../data/localData'
 import { ADDRESS_PAGE_SIZE, DuplicateActiveAddressError, type AddressRecordFilter, type AddressRecordSort } from '../services/addressRecordService'
 import { queryProducts, type ProductListItem } from '../services/productService'
@@ -7,20 +7,27 @@ import type { AddressRecord } from '../types/addressRecord'
 import { formatNumber } from '../lib/format'
 import { rowNavigationProps } from '../lib/rowNavigation'
 import { toStoredAddress } from '../lib/addressFormat'
+import { exportWorkbook, addressRows } from '../services/xlsxExport'
 import { InlineEdit } from '../components/InlineEdit'
+import { MoveAddressPanel } from './MoveAddressPanel'
+import { EmptyLocationsPanel } from './EmptyLocationsPanel'
 import './AddressesPage.css'
 
 type AddressesPageProps = {
   initialSelectedRecordId?: string | null
+  /** Stok koduna tıklayınca ürün detayına gider. */
+  onProductSelect?: (productId: string) => void
 }
 
 const SEARCH_DEBOUNCE_MS = 250
+// Depodaki koridorlar (CLAUDE.md: F, G, H, I, J, K, N, O).
+const AISLES = ['F', 'G', 'H', 'I', 'J', 'K', 'N', 'O']
 
 /** Form yalnızca bu üç alanı kullanıyor. Dar tip, hem seçicinin sonucundan
  *  hem de mevcut bir adres kaydından doldurulabilsin diye. */
 type PickedProduct = Pick<ProductListItem, 'id' | 'stockCode' | 'stockName'>
 
-export function AddressesPage({ initialSelectedRecordId = null }: AddressesPageProps) {
+export function AddressesPage({ initialSelectedRecordId = null, onProductSelect }: AddressesPageProps) {
   const [records, setRecords] = useState<AddressRecord[]>([])
   const [total, setTotal] = useState(0)
   const [counts, setCounts] = useState({ all: 0, active: 0, inactive: 0, activeCartons: 0 })
@@ -29,7 +36,16 @@ export function AddressesPage({ initialSelectedRecordId = null }: AddressesPageP
   const [activeQuery, setActiveQuery] = useState('')
   const [filter, setFilter] = useState<AddressRecordFilter>('all')
   const [sort, setSort] = useState<AddressRecordSort>('updated-at')
+  const [aisle, setAisle] = useState('')
   const [page, setPage] = useState(0)
+  const [isExporting, setIsExporting] = useState(false)
+  const [view, setView] = useState<'list' | 'empty'>('list')
+  const [isMoveOpen, setIsMoveOpen] = useState(false)
+  // Toplu işlem için seçim. Sayfalar arasında korunur; arama/filtre/koridor değişince sıfırlanır.
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [isBulkBusy, setIsBulkBusy] = useState(false)
+  const [bulkMessage, setBulkMessage] = useState('')
+  const [otherAddresses, setOtherAddresses] = useState<AddressRecord[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState('')
   const [formError, setFormError] = useState('')
@@ -53,7 +69,18 @@ export function AddressesPage({ initialSelectedRecordId = null }: AddressesPageP
 
   // Arama/filtre/sıralama değişince ilk sayfaya dön; yoksa kullanıcı boş bir
   // sayfada kalabiliyor.
-  useEffect(() => { setPage(0) }, [activeQuery, filter, sort])
+  useEffect(() => { setPage(0) }, [activeQuery, filter, sort, aisle])
+  useEffect(() => { setSelectedIds(new Set()) }, [activeQuery, filter, aisle])
+
+  // Detay panelinde aynı ürünün diğer adresleri.
+  useEffect(() => {
+    if (!selectedRecord) { setOtherAddresses([]); return }
+    let cancelled = false
+    void addressRecordService.getByProductId(selectedRecord.productId)
+      .then((all) => { if (!cancelled) setOtherAddresses(all.filter((item) => item.id !== selectedRecord.id && item.isActive)) })
+      .catch((reason: unknown) => { console.error(reason); if (!cancelled) setOtherAddresses([]) })
+    return () => { cancelled = true }
+  }, [selectedRecord])
 
   useEffect(() => {
     let cancelled = false
@@ -61,7 +88,7 @@ export function AddressesPage({ initialSelectedRecordId = null }: AddressesPageP
     void (async () => {
       try {
         const [result, nextCounts] = await Promise.all([
-          addressRecordService.search({ query: activeQuery, filter, sort, page }),
+          addressRecordService.search({ query: activeQuery, filter, sort, aisle, page }),
           addressRecordService.getCounts(),
         ])
         if (cancelled) return
@@ -77,7 +104,7 @@ export function AddressesPage({ initialSelectedRecordId = null }: AddressesPageP
       }
     })()
     return () => { cancelled = true }
-  }, [activeQuery, filter, sort, page, reloadToken])
+  }, [activeQuery, filter, sort, aisle, page, reloadToken])
 
   // Ürün detayından bir adrese tıklanarak gelindiğinde o kayıt listede
   // olmayabilir (başka sayfada); doğrudan kendisini çekiyoruz.
@@ -98,8 +125,71 @@ export function AddressesPage({ initialSelectedRecordId = null }: AddressesPageP
   const pageCount = Math.max(1, Math.ceil(total / ADDRESS_PAGE_SIZE))
   const safePage = Math.min(page, pageCount - 1)
   const pageStart = safePage * ADDRESS_PAGE_SIZE
-  const visibleRecords = records
   const totalCartons = counts.activeCartons
+
+  const toggleOne = (id: string) => setSelectedIds((current) => {
+    const next = new Set(current)
+    if (next.has(id)) next.delete(id); else next.add(id)
+    return next
+  })
+  const allOnPageSelected = records.length > 0 && records.every((record) => selectedIds.has(record.id))
+  const togglePage = () => setSelectedIds((current) => {
+    const next = new Set(current)
+    for (const record of records) { if (allOnPageSelected) next.delete(record.id); else next.add(record.id) }
+    return next
+  })
+
+  const bulkSetActive = async (isActive: boolean) => {
+    const ids = [...selectedIds]
+    setIsBulkBusy(true)
+    setBulkMessage('')
+    try {
+      const changed = await addressRecordService.setActiveMany(ids, isActive)
+      setBulkMessage(`${formatNumber(changed)} kayıt ${isActive ? 'aktif' : 'pasif'} yapıldı.`)
+      setSelectedIds(new Set())
+      reload()
+    } catch (reason: unknown) {
+      console.error(reason)
+      setBulkMessage(reason instanceof DuplicateActiveAddressError
+        ? 'Aktif yapılamadı: seçilenlerden biri için aynı ürün ve adreste zaten aktif bir kayıt var. Hiçbir kayıt değişmedi.'
+        : 'İşlem yapılamadı. Bağlantıyı kontrol edip tekrar deneyin.')
+    } finally {
+      setIsBulkBusy(false)
+    }
+  }
+
+  const bulkDelete = async () => {
+    const chosen = records.filter((record) => selectedIds.has(record.id))
+    const sample = chosen.slice(0, 3).map((record) => `${record.address} / ${record.stockCode}`).join(', ')
+    if (!window.confirm(`${formatNumber(selectedIds.size)} adres kaydı kalıcı olarak silinsin mi? Geri alınamaz.${sample ? `\n\nÖrnek: ${sample}${chosen.length > 3 || selectedIds.size > chosen.length ? '…' : ''}` : ''}`)) return
+    setIsBulkBusy(true)
+    setBulkMessage('')
+    try {
+      const deleted = await addressRecordService.deleteMany([...selectedIds])
+      setBulkMessage(`${formatNumber(deleted)} kayıt silindi.`)
+      setSelectedIds(new Set())
+      reload(null)
+    } catch (reason: unknown) {
+      console.error(reason)
+      setBulkMessage('Silme yapılamadı. Bazı kayıtlar silinmiş olabilir; listeyi kontrol edin.')
+      reload()
+    } finally {
+      setIsBulkBusy(false)
+    }
+  }
+
+  const exportFiltered = async () => {
+    setIsExporting(true)
+    try {
+      const all = await addressRecordService.searchAll({ query: activeQuery, filter, sort, aisle })
+      await exportWorkbook([{ name: 'Adresler', rows: addressRows(all) }], `adresler${aisle ? `_${aisle}` : ''}.xlsx`)
+    } catch (reason: unknown) {
+      console.error(reason)
+      setError('Excel dosyası hazırlanamadı. Lütfen tekrar deneyin.')
+    } finally {
+      setIsExporting(false)
+    }
+  }
 
   const closeForm = () => {
     setIsFormOpen(false)
@@ -192,7 +282,7 @@ export function AddressesPage({ initialSelectedRecordId = null }: AddressesPageP
   }
 
   const deleteRecord = async (record: AddressRecord) => {
-    if (!window.confirm('Bu adres kaydı silinsin mi?')) return
+    if (!window.confirm(`${record.address} adresindeki ${record.stockCode} kaydı kalıcı olarak silinsin mi? Geri alınamaz.`)) return
     try {
       await addressRecordService.delete(record.id)
       reload(selectedRecord?.id === record.id ? null : selectedRecord)
@@ -211,21 +301,30 @@ export function AddressesPage({ initialSelectedRecordId = null }: AddressesPageP
           <p className="addresses-page__description">Depodaki fiziksel konumları yönetin.</p>
         </div>
         <div className="addresses-page__header-actions">
+          <button className="button button--secondary" type="button" onClick={() => setIsMoveOpen((open) => !open)}>Adres taşı</button>
+          <button className="button button--secondary" type="button" onClick={() => setView((current) => current === 'list' ? 'empty' : 'list')}>{view === 'list' ? 'Boş konumlar' : 'Adres listesi'}</button>
+          <button className="button button--secondary" type="button" onClick={() => void exportFiltered()} disabled={isExporting || total === 0}><Download size={15}/> {isExporting ? 'Hazırlanıyor...' : "Excel'e al"}</button>
           <button className="button button--primary" type="button" onClick={openCreateForm}><Plus size={15}/> Adres Ekle</button>
         </div>
       </header>
 
-      <section className="addresses-toolbar" aria-label="Adres filtreleri">
+      <section className="addresses-toolbar" aria-label="Adres filtreleri" style={view === 'list' ? undefined : { display: 'none' }}>
         <label className="addresses-search">
           <Search size={17} aria-hidden="true" />
           <span className="visually-hidden">Adres, stok kodu, stok adı veya barkod ara</span>
-          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Adres veya stok kodu ara..." />
+          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Adres, stok kodu, stok adı veya barkod ara..." />
         </label>
         <div className="addresses-filter-group" aria-label="Durum filtreleri">
           <FilterButton active={filter === 'all'} onClick={() => setFilter('all')}>Tümü <strong>{formatNumber(counts.all)}</strong></FilterButton>
           <FilterButton active={filter === 'active'} onClick={() => setFilter('active')}>Aktif <strong>{formatNumber(counts.active)}</strong></FilterButton>
           <FilterButton active={filter === 'inactive'} onClick={() => setFilter('inactive')}>Pasif <strong>{formatNumber(counts.inactive)}</strong></FilterButton>
         </div>
+        <label className="addresses-sort">Koridor
+          <select value={aisle} onChange={(event) => setAisle(event.target.value)}>
+            <option value="">Tümü</option>
+            {AISLES.map((letter) => <option key={letter} value={letter}>{letter}</option>)}
+          </select>
+        </label>
         <label className="addresses-sort">Sırala
           <select value={sort} onChange={(event) => setSort(event.target.value as AddressRecordSort)}>
             <option value="updated-at">Güncellenme tarihi</option>
@@ -244,28 +343,46 @@ export function AddressesPage({ initialSelectedRecordId = null }: AddressesPageP
         <SummaryMetric label="Toplam koli" value={totalCartons} />
       </section>
 
-      {isLoading && <p className="addresses-state" role="status">Adresler yükleniyor...</p>}
-      {!isLoading && error && <p className="addresses-state addresses-state--error" role="alert">{error}</p>}
-      {!isLoading && !error && (
+      {isMoveOpen && <MoveAddressPanel onDone={() => { setIsMoveOpen(false); reload(null) }} onClose={() => setIsMoveOpen(false)} />}
+      {view === 'empty' && <EmptyLocationsPanel aisles={AISLES} initialAisle={aisle} />}
+      {view === 'list' && isLoading && <p className="addresses-state" role="status">Adresler yükleniyor...</p>}
+      {view === 'list' && !isLoading && error && <p className="addresses-state addresses-state--error" role="alert">{error}</p>}
+      {view === 'list' && !isLoading && !error && (
         <div className={`addresses-layout ${selectedRecord ? 'addresses-layout--detail-open' : ''}`}>
           <section className="addresses-table-panel" aria-label="Adres kayıtları">
-            <div className="addresses-table-caption"><span>{total === 0 ? '0 kayıt' : `${formatNumber(pageStart + 1)}-${formatNumber(pageStart + visibleRecords.length)} / ${formatNumber(total)} kayıt`}</span><span>Adres, koli veya durumu tıklayıp yerinde düzeltin · ayrıntı için satıra tıklayın</span></div>
+            <div className="addresses-table-caption"><span>{total === 0 ? '0 kayıt' : `${formatNumber(pageStart + 1)}-${formatNumber(pageStart + records.length)} / ${formatNumber(total)} kayıt`}</span><span>Adres, koli veya durumu tıklayıp yerinde düzeltin · ayrıntı için satıra tıklayın</span></div>
+            {(selectedIds.size > 0 || bulkMessage) && <div className="addresses-selection-bar" role="status">
+              <span>{selectedIds.size > 0 ? `${formatNumber(selectedIds.size)} kayıt seçili` : bulkMessage}</span>
+              {selectedIds.size > 0 && <>
+                <button className="button button--secondary" type="button" disabled={isBulkBusy} onClick={() => void bulkSetActive(false)}>Pasif yap</button>
+                <button className="button button--secondary" type="button" disabled={isBulkBusy} onClick={() => void bulkSetActive(true)}>Aktif yap</button>
+                <button className="button button--danger" type="button" disabled={isBulkBusy} onClick={() => void bulkDelete()}>Sil</button>
+                <button className="button button--secondary" type="button" disabled={isBulkBusy} onClick={() => setSelectedIds(new Set())}>Seçimi temizle</button>
+              </>}
+            </div>}
             {total === 0 ? <p className="addresses-state">{counts.all === 0 ? 'Henüz adres kaydı bulunmuyor.' : 'Aramanızla eşleşen adres bulunamadı.'}</p> : (
               <>
               <div className="addresses-table-wrap">
                 <table className="addresses-table">
-                  <thead><tr><th>Adres</th><th>Stok kodu</th><th>Stok adı</th><th>Koli</th><th>Durum</th><th>Güncellenme</th><th aria-label="Aksiyon" /></tr></thead>
-                  <tbody>{visibleRecords.map((record) => <tr className={selectedRecord?.id === record.id ? 'addresses-row addresses-row--selected' : 'addresses-row'} key={record.id} onClick={() => { setSelectedRecord(record); closeForm() }} {...rowNavigationProps(() => { setSelectedRecord(record); closeForm() })}>
-                    <td>
+                  <thead><tr><th className="addresses-select-col"><input type="checkbox" aria-label="Sayfadakilerin hepsini seç" checked={allOnPageSelected} onChange={togglePage} /></th><th>Adres</th><th>Stok kodu</th><th>Stok adı</th><th>Koli</th><th>Durum</th><th>Güncellenme</th><th aria-label="Aksiyon" /></tr></thead>
+                  <tbody>{records.map((record) => <tr className={selectedRecord?.id === record.id ? 'addresses-row addresses-row--selected' : 'addresses-row'} key={record.id} onClick={() => { setSelectedRecord(record); closeForm() }} {...rowNavigationProps(() => { setSelectedRecord(record); closeForm() })}>
+                    <td className="addresses-select-col" onClick={(event) => event.stopPropagation()}><input type="checkbox" aria-label={`${record.address} kaydını seç`} checked={selectedIds.has(record.id)} onChange={() => toggleOne(record.id)} /></td><td>
                       <InlineEdit kind="text" label="Adres" value={record.address} inputClassName="inline-edit-input--address"
                         display={<span className="address-cell"><MapPin size={14}/>{record.address}</span>}
                         validate={(value) => value.trim() ? null : 'Adres boş olamaz.'}
                         onCommit={(value) => saveInline(record, { address: toStoredAddress(value) })} />
-                    </td><td><strong>{record.stockCode}</strong></td><td className="address-product-name">{record.stockName}</td><td>
+                    </td><td>{onProductSelect ? <button className="address-stock-link" type="button" title="Ürün detayını aç" onClick={(event) => { event.stopPropagation(); onProductSelect(record.productId) }}>{record.stockCode}</button> : <strong>{record.stockCode}</strong>}</td><td className="address-product-name">{record.stockName}</td><td>
                       <InlineEdit kind="number" label="Koli adedi" value={String(record.cartonCount)} inputClassName="inline-edit-input--number"
                         display={<strong className="carton-cell">{formatNumber(record.cartonCount)}</strong>}
-                        validate={(value) => Number.isInteger(Number(value)) && Number(value) >= 1 ? null : 'Koli 1 veya daha büyük tam sayı olmalı.'}
-                        onCommit={(value) => saveInline(record, { cartonCount: Number(value) })} />
+                        validate={(value) => Number.isInteger(Number(value)) && Number(value) >= 0 && value.trim() !== '' ? null : 'Koli 0 veya daha büyük tam sayı olmalı (0 = adresi sil).'}
+                        onCommit={async (value) => {
+                          if (Number(value) === 0) {
+                            // İçe Aktar'daki koli 0 kuralıyla aynı: adres kaydı silinir.
+                            await deleteRecord(record)
+                            return
+                          }
+                          await saveInline(record, { cartonCount: Number(value) })
+                        }} />
                     </td><td>
                       <InlineEdit kind="select" label="Durum" value={String(record.isActive)} options={[['true', 'Aktif'], ['false', 'Pasif']]}
                         display={<StatusBadge isActive={record.isActive} />}
@@ -290,6 +407,7 @@ export function AddressesPage({ initialSelectedRecordId = null }: AddressesPageP
             <div className="address-detail__product"><span>Stok kodu<strong>{selectedRecord.stockCode}</strong></span><span>Stok adı<strong>{selectedRecord.stockName}</strong></span></div>
             <div className="address-detail__meta"><span>Adres<strong>{selectedRecord.address}</strong></span><span>Koli<strong>{formatNumber(selectedRecord.cartonCount)}</strong></span><span>Durum<StatusBadge isActive={selectedRecord.isActive} /></span></div>
             <div className="address-detail__dates"><span>Oluşturulma<strong>{formatDate(selectedRecord.createdAt)}</strong></span><span>Güncellenme<strong>{formatDate(selectedRecord.updatedAt)}</strong></span></div>
+            {otherAddresses.length > 0 && <div className="address-detail__others"><h3>Bu ürünün diğer adresleri</h3><ul>{otherAddresses.map((item) => <li key={item.id}><strong>{item.address}</strong><span>{formatNumber(item.cartonCount)} koli</span></li>)}</ul></div>}
             <div className="address-detail__actions"><button className="button button--secondary" type="button" onClick={() => openEditForm(selectedRecord)}>Düzenle</button><button className="button button--danger" type="button" onClick={() => deleteRecord(selectedRecord)}>Sil</button></div>
             {isFormOpen && <AddressForm selectedProduct={selectedProduct} setSelectedProduct={setSelectedProduct} address={address} setAddress={setAddress} cartonCount={cartonCount} setCartonCount={setCartonCount} isActive={isActive} setIsActive={setIsActive} isEditing={Boolean(editingRecordId)} isSaving={isSaving} error={formError} onSubmit={saveRecord} onCancel={closeForm} />}
           </aside>}

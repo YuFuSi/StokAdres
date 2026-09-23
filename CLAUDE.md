@@ -1113,3 +1113,11 @@ ve `.7z` Harun abiye yanlışlıkla gitmesin diye silindi.
 - kod imzalama,
 - build'i başka bir makinede ya da CI'da almak,
 - SAC'ı kapatmak.
+
+## 2026-09-21 — Adresler ekranı: koridor filtresi, Excel, düzeltmeler
+- **Migration `20260921100000_search_address_records_aisle`** (kullanıcı SQL Editor'den uyguladı, `schema_migrations`'ta kaydı YOK): `search_address_records`'a `p_aisle text default ''` (adresin ilk harfi, tam eşleşme). Eski 5 parametreli imza `drop` edildi. Canlıda doğrulandı: tek imza, anon EXECUTE, SECURITY INVOKER, G = 372 (doğrudan sorguyla aynı).
+- **Adresler:** Koridor seçici (F,G,H,I,J,K,N,O), **Excel'e al** (aynı süzgecin TÜMÜ; `addressRecordService.searchAll` 1000'lik sayfalarla), silme onayında adres + stok kodu, arama placeholder'ı düzeltildi.
+- **Koli 0 = adresi sil:** hücrede 0 girilirse İçe Aktar'daki kuralla aynı şekilde silme onayı açılır (form hâlâ ≥1 ister).
+- Doğrulama: typecheck + 66 test; tarayıcıda G filtresi 372 kayıt, Excel 372 satır ve hepsi G.
+- **Adresler (devam):** stok koduna tıklayınca ürün detayı + detay panelinde ürünün diğer adresleri; **Adres taşı** (`MoveAddressPanel`, `addressRecordService.previewMove/moveRecords`, saf mantık `lib/addressMove.ts`: hedefte aynı ürünün aktif kaydı varsa çakışma, taşınmaz; taşıma tek `update ... in(ids)` = atomik); **toplu işlem** (onay kutuları, `setActiveMany`/`deleteMany`, 200'lük parça, seçim arama/filtre/koridor değişince sıfırlanır); **Boş konumlar** (`EmptyLocationsPanel`, `lib/emptyLocations.ts`). ⚠️ Boş konum ızgarası veritabanında YOK: raflar 01..koridorda görülen en büyük raf, katlar 01–04, DİBİ yalnızca koridorda kullanılıyorsa. F koridoru: 70 dolu / 140 konum (SQL ile doğrulandı).
+- Doğrulama: typecheck + 73 test; tarayıcıda seçim çubuğu, ürüne geçiş, taşıma ÖNİZLEMESİ (G34-02 = 3 kayıt = SQL), boş konum (F). **Gerçek yazma (Taşı / toplu pasif-sil) canlıda denenmedi.**

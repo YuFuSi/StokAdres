@@ -5,6 +5,7 @@ import type {
 } from '../types/addressRecord'
 import { supabase } from '../lib/supabase'
 import { fetchAllRows } from '../lib/pagination'
+import { planMove, type MovePlan } from '../lib/addressMove'
 import { createProduct, DuplicateProductStockCodeError, getProductByStockCode, rollbackCreatedProduct } from './productService'
 
 type ProductRelation = {
@@ -52,11 +53,16 @@ export type AddressQueryOptions = {
   query?: string
   filter?: AddressRecordFilter
   sort?: AddressRecordSort
+  /** Koridor harfi (adresin ilk harfi); boş = hepsi. */
+  aisle?: string
   page?: number
   pageSize?: number
 }
 
 export type AddressQueryResult = { items: AddressRecord[]; total: number }
+
+/** `in.(...)` URL'de taşınır; uzun listeler parçalanır. */
+const UPDATE_CHUNK = 200
 
 /** Stoklar ekranıyla aynı sayfa boyutu; iki liste aynı ritimde geziliyor. */
 export const ADDRESS_PAGE_SIZE = 50
@@ -200,13 +206,14 @@ export class AddressRecordService {
    * Toplam sayı her satırda geldiği için ayrıca `count` isteği gerekmiyor.
    */
   async search(options: AddressQueryOptions = {}): Promise<AddressQueryResult> {
-    const { query = '', filter = 'all', sort = 'updated-at', page = 0, pageSize = ADDRESS_PAGE_SIZE } = options
+    const { query = '', filter = 'all', sort = 'updated-at', aisle = '', page = 0, pageSize = ADDRESS_PAGE_SIZE } = options
     const { data, error } = await supabase.rpc('search_address_records', {
       p_query: query.trim(),
       p_filter: filter,
       p_sort: sort,
       p_limit: pageSize,
       p_offset: page * pageSize,
+      p_aisle: aisle,
     })
     if (error) throw new Error(error.message)
 
@@ -225,6 +232,68 @@ export class AddressRecordService {
       })),
       // total_count her satırda aynı; satır yoksa sonuç da yok.
       total: rows.length > 0 ? Number(rows[0].total_count) : 0,
+    }
+  }
+
+  /** Bir adresteki AKTİF kayıtlar (büyük/küçük harf yok sayılır). */
+  async getActiveByAddress(address: string): Promise<AddressRecord[]> {
+    // ilike joker karakterleri (% _) adres değerinde anlam taşımamalı.
+    const exact = address.trim().replace(/[\\%_]/g, (char) => `\\${char}`)
+    const { data, error } = await supabase
+      .from('address_records')
+      .select(ADDRESS_RECORD_SELECT)
+      .eq('is_active', true)
+      .ilike('address', exact)
+      .order('created_at')
+      .order('id')
+    if (error) throw error
+    return (data ?? []).map((record) => this.mapRecord(record as unknown as AddressRecordRow))
+  }
+
+  /** Taşıma önizlemesi: hiçbir şey yazmaz. */
+  async previewMove(from: string, to: string): Promise<MovePlan<AddressRecord>> {
+    const [source, destination] = await Promise.all([this.getActiveByAddress(from), this.getActiveByAddress(to)])
+    return planMove(source, new Set(destination.map((record) => record.productId)))
+  }
+
+  /** Kayıtları tek ifadeyle (atomik) yeni adrese taşır. Parça parça değil: yarım taşıma kalmasın. */
+  async moveRecords(ids: string[], toAddress: string): Promise<number> {
+    if (ids.length === 0) return 0
+    const { data, error } = await supabase.from('address_records').update({ address: toAddress }).in('id', ids).select('id')
+    if (error) throw this.mapSupabaseError(error, '', toAddress)
+    return data?.length ?? 0
+  }
+
+  /** Toplu durum değişikliği. Aktif yapma benzersiz indeksi ihlal ederse hiçbiri yazılmaz. */
+  async setActiveMany(ids: string[], isActive: boolean): Promise<number> {
+    let changed = 0
+    for (let start = 0; start < ids.length; start += UPDATE_CHUNK) {
+      const { data, error } = await supabase.from('address_records').update({ is_active: isActive }).in('id', ids.slice(start, start + UPDATE_CHUNK)).select('id')
+      if (error) throw this.mapSupabaseError(error, '', '')
+      changed += data?.length ?? 0
+    }
+    return changed
+  }
+
+  async deleteMany(ids: string[]): Promise<number> {
+    let deleted = 0
+    for (let start = 0; start < ids.length; start += UPDATE_CHUNK) {
+      const { error, count } = await supabase.from('address_records').delete({ count: 'exact' }).in('id', ids.slice(start, start + UPDATE_CHUNK))
+      if (error) throw error
+      deleted += count ?? 0
+    }
+    return deleted
+  }
+
+  /** Aynı süzgecin TÜM sonucu (Excel için); sayfa sayfa çeker. */
+  async searchAll(options: Omit<AddressQueryOptions, 'page' | 'pageSize'>, onProgress?: (loaded: number) => void): Promise<AddressRecord[]> {
+    const pageSize = 1000
+    const all: AddressRecord[] = []
+    for (let page = 0; ; page += 1) {
+      const result = await this.search({ ...options, page, pageSize })
+      all.push(...result.items)
+      onProgress?.(all.length)
+      if (result.items.length < pageSize) return all
     }
   }
 

@@ -47,7 +47,7 @@ export function App() {
       {activePage === 'dashboard' && <DashboardPage onNavigate={navigate} onOpenStocks={openStocksWithFilter} />}
       {activePage === 'stocks' && selectedProductId && <ProductDetailPage productId={selectedProductId} onBack={() => setSelectedProductId(null)} onAddressSelect={(recordId) => { setSelectedProductId(null); setSelectedAddressId(recordId); setActivePage('addresses') }} />}
       {activePage === 'stocks' && !selectedProductId && <StocksPage onProductSelect={setSelectedProductId} initialFilter={stocksFilter} />}
-      {activePage === 'addresses' && <AddressesPage initialSelectedRecordId={selectedAddressId} />}
+      {activePage === 'addresses' && <AddressesPage initialSelectedRecordId={selectedAddressId} onProductSelect={openProduct} />}
       {activePage === 'find' && <OperationsPage page="find" />}
       {activePage === 'caba' && <CabaLookupPage />}
       {activePage === 'import' && <ImportPage />}
