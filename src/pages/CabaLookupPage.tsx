@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { ClipboardPaste, FileSpreadsheet, MapPin, PackageSearch, Printer, Search, Upload, X } from 'lucide-react'
+import { ClipboardPaste, Eye, FileSpreadsheet, MapPin, PackageSearch, Printer, Search, Upload, X } from 'lucide-react'
 import { lookupCabaAddresses, type CabaMiss } from '../services/cabaLookup'
 import { OperationImportFileError, parseOperationImportFile, parseOperationImportText, type OperationImportRow } from '../services/operationImportService'
 import { queryProducts, type ProductListItem } from '../services/productService'
@@ -44,8 +44,9 @@ export function CabaLookupPage() {
   const [progress, setProgress] = useState('')
   const [error, setError] = useState('')
 
-  // Girişler sonuç ekranından dönünce korunur: aralığı biraz değiştirip yeniden
-  // listelemek ya da seçili ürünlere bir tane daha eklemek için.
+  // Girişler sonuç ekranından dönünce korunur (aralığı biraz değiştirip yeniden
+  // listelemek ya da seçili ürünlere bir tane daha eklemek için). CABA yapıştırma
+  // metni ise "Yeni Liste" ile kullanıcı isteği üzerine temizlenir.
   const [pastedText, setPastedText] = useState('')
   const [rangeFrom, setRangeFrom] = useState('')
   const [rangeTo, setRangeTo] = useState('')
@@ -98,7 +99,17 @@ export function CabaLookupPage() {
     })
   }
 
-  if (result) return <AddressOutput result={result} onReset={() => setResult(null)} />
+  if (result) {
+    return (
+      <AddressOutput
+        result={result}
+        onReset={() => {
+          setResult(null)
+          setPastedText('')
+        }}
+      />
+    )
+  }
 
   return (
     <main className="operations-page caba-page">
@@ -346,6 +357,7 @@ function AddressOutput({ result, onReset }: { result: OutputResult; onReset: () 
   const [layout, setLayout] = useState<OutputLayout>(result.source === 'range' ? 'rack' : 'product')
   const [excelMessage, setExcelMessage] = useState('')
   const [isExporting, setIsExporting] = useState(false)
+  const [isPreviewing, setIsPreviewing] = useState(false)
 
   const { items, misses, notes } = result
   const products = buildProductList(items)
@@ -388,6 +400,28 @@ function AddressOutput({ result, onReset }: { result: OutputResult; onReset: () 
     }
   }
 
+  // Kâğıda basmadan önce varsayılan PDF görüntüleyicisinde kâğıt düzeni ve sayfa sayısını gösterir.
+  const handlePrintPreview = async () => {
+    if (rows.length === 0 || isPreviewing) return
+    const electron = window as Window & {
+      electronAPI?: { printPreview?: () => Promise<{ filePath: string }> }
+    }
+    if (!electron.electronAPI?.printPreview) {
+      window.print()
+      return
+    }
+
+    setIsPreviewing(true)
+    try {
+      await electron.electronAPI.printPreview()
+    } catch (reason: unknown) {
+      console.error(reason)
+      setExcelMessage('Baskı önizlemesi açılamadı.')
+    } finally {
+      setIsPreviewing(false)
+    }
+  }
+
   return (
     <main className="operations-page caba-page caba-page--results">
       <header className="page-header caba-results__header">
@@ -402,6 +436,7 @@ function AddressOutput({ result, onReset }: { result: OutputResult; onReset: () 
             <button type="button" aria-pressed={layout === 'rack'} onClick={() => setLayout('rack')}>Rafa göre</button>
           </div>
           <button className="button button--secondary" type="button" disabled={rows.length === 0 || isExporting} onClick={() => void exportExcel()}><FileSpreadsheet size={14} /> {isExporting ? 'Hazırlanıyor…' : 'Excel'}</button>
+          <button className="button button--secondary" type="button" disabled={rows.length === 0 || isPreviewing} onClick={() => void handlePrintPreview()} title="Kâğıt düzenini ve sayfa sayısını PDF olarak önizle"><Eye size={14} /> {isPreviewing ? 'Hazırlanıyor…' : 'Önizle'}</button>
           <button className="button button--primary" type="button" disabled={rows.length === 0} onClick={() => window.print()} title="Ctrl+P"><Printer size={15} /> Yazdır</button>
         </div>
       </header>

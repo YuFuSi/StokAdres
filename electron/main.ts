@@ -1,5 +1,6 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, shell } from 'electron'
 import fs from 'node:fs/promises'
+import os from 'node:os'
 import path from 'node:path'
 
 const isDev = process.argv.includes('--dev')
@@ -127,6 +128,31 @@ app.whenReady().then(() => {
     await fs.mkdir(directory, { recursive: true })
     const error = await shell.openPath(directory)
     return { ok: error === '' }
+  })
+  ipcMain.handle('print-preview', async (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (!win) throw new Error('Pencere bulunamadı.')
+
+    // webContents.printToPDF Chromium'un dahili yazdırma motorunu kullanarak
+    // sayfa CSS'indeki @page kurallarına tam uyumlu PDF üretir.
+    // Not: Bu standart Electron API'sidir; CDP Page.printToPDF kısıtlamasından bağımsızdır.
+    const pdfBuffer = await win.webContents.printToPDF({
+      printBackground: true,
+      preferCSSPageSize: true,
+    })
+
+    const tempFileName = `StokAdres_baski_onizleme_${Date.now()}.pdf`
+    const tempFilePath = path.join(os.tmpdir(), tempFileName)
+    await fs.writeFile(tempFilePath, pdfBuffer)
+
+    // Kullanıcının varsayılan sistem PDF görüntüleyicisinde açılır.
+    // Ekstra paket yüklemeden sayfa sayısı ve kâğıt düzeni net görülür.
+    const openError = await shell.openPath(tempFilePath)
+    if (openError) {
+      throw new Error(`PDF görüntüleyici açılamadı: ${openError}`)
+    }
+
+    return { filePath: tempFilePath }
   })
 
   createWindow()

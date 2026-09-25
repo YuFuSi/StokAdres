@@ -1131,3 +1131,25 @@ ve `.7z` Harun abiye yanlışlıkla gitmesin diye silindi.
 - **Bu turdan yeni tuzak:** Antigravity/başka bir asistanın ürettiği kodu incelemeden commit etme — `npm run typecheck`/`test`/`build` PASS olması CSP gibi yalnızca gerçek tarayıcıda ortaya çıkan ihlalleri yakalamaz. Paketlenmiş `dist/index.html`'i başsız Edge'de açıp konsolu kontrol etmek (Tuzak #8c'deki yöntem) tek güvenilir doğrulama.
 - **Doğrulama:** `npm run typecheck` PASS · `npm test` 79/79 PASS · `npm run build` (renderer + electron) PASS.
 
+## 2026-09-25 — Çıktı Al: Kâğıt israfını azaltma, baskı önizlemesi ve CABA temizliği
+- **Kâğıt israfını azaltma ve tek sayfaya sığdırma (Madde 4):**
+  - Üst özet şeridi (`.caba-summary`): `@media print`'te ekrandan gelen devasa dikey padding ve 18px font yerine, tek satırlık (~1 cm dikey alan), dikey çizgi ayırıcılı ve 11px kompakt bir çubuğa dönüştürüldü.
+  - Ürün tablosu satırları (`.caba-table--products`): Kâğıt baskısında dikey padding `4px 10px`'ten `2px 4px`'e, adres fontu 12px'e, koli metni 9px'e, işaretleme kutucukları 9×9px'e sıkılaştırıldı; satır yüksekliği ~55px'ten ~29px'e indi. Ekran görünümüne (`@media print` dışı) hiç dokunulmadı.
+  - `@page` kenar boşluğu: `12mm 10mm 14mm`'den `7mm 6mm 9mm`'ye daraltıldı (alt bilgideki sayfa numarası korundu).
+- **Adresi bulunamayanlar kâğıttan kaldırıldı (Madde 2):** `.caba-misses { display: none !important; }` ile ekranda adresleme bilgisi olarak kalması sağlandı, kâğıt israfını önlemek için baskıdan çıkarıldı. Artık gereksiz kalan break/h2 kuralları temizlendi.
+- **"Yeni Liste" yapıştırma kutusunu temizleme (Madde 3):** `onReset` tetiklendiğinde `pastedText` state'i temizleniyor (`setPastedText('')`). Adres aralığı ve seçilen ürünler korunmaya devam ediyor.
+- **Baskı önizlemesi (Madde 1):**
+  - Renderer'a `Önizle` butonu eklendi. Electron IPC katmanına 5. handler olarak `print-preview` (`electron/main.ts` + `electron/preload.ts`) eklendi.
+  - `win.webContents.printToPDF({ printBackground: true, preferCSSPageSize: true })` ile geçici PDF üretilip `shell.openPath` ile kullanıcının varsayılan PDF görüntüleyicisinde açılıyor.
+  - ⚠️ **Kritik Ayrım:** Bu özellik Electron'un doğrudan sağladığı `win.webContents.printToPDF()` API'sini kullanır. Tuzak #8c'de bahsedilen "CDP Page.printToPDF paketlenmiş uygulamada desteklenmiyor" notu Chrome DevTools Protocol / remote debugging port ile ilgilidir; `webContents.printToPDF()` ise normal bir Electron runtime API'sidir ve hem geliştirmede hem paketlenmiş uygulamada sorunsuz çalışır.
+
+**Bu turda Antigravity bütçesi bitti, kalanı ben tamamladım** (kod incelemesi + gerçek doğrulama — CLAUDE.md'nin kendi tuzağı: "üretilen kodu incelemeden commit etme"):
+- **Madde 1 (baskı önizleme):** Kod incelendi, `printToPDF` API kullanımı doğru. Ayrıca izole bir betikle (`npx electron` + `data:` URL, tam uygulamayı açmadan) bu Electron sürümünde (44.2.0) `webContents.printToPDF({ printBackground: true, preferCSSPageSize: true })`'nin gerçekten çalıştığı doğrulandı (12 KB'lık geçerli PDF üretti). Tam uçtan uca (gerçek pencerede Önizle düğmesi → PDF görüntüleyici açılması) bu makinede Smart App Control nedeniyle paketlenmiş exe test edilemiyor (Tuzak #8c); `npm run dev`'de elle denenmedi, sonraki kurulum dosyası üretiminde doğrulanmalı.
+- **Madde 2 ve 4 (misses gizleme + tek sayfaya sığdırma):** Playwright ile GERÇEK print media emülasyonu (`emulateMedia({media:'print'})`, A4 boyutunda 794×1123 viewport) kullanılarak canlı veriden 25 ürünlük bir CABA listesiyle test edildi:
+  - İçerik yüksekliği **880px**, kullanılabilir A4 alanı (7mm/6mm/9mm kenar boşluklarıyla) **1062px** → 25 ürün, 66 konum, 8 koridor **tek sayfaya sığıyor**.
+  - Ayrı bir denemede adresi olmayan bir stok kodu eklendi: ekranda "Adresi bulunamayanlar" görünüyor (`offsetHeight > 0`), print media'da `display: none` olarak doğrulandı.
+  - Not: İlk deneme ekran genişliğinde (1280px) sabit CSS enjekte ederek yapılmıştı — bu yöntem güvenilmezdi (viewport farkı gerçek baskıyı yansıtmaz), Playwright'ın gerçek `emulate_media`'sıyla tekrarlandı.
+- **Madde 3:** Tarayıcıda gerçek akış denendi: yapıştır → Adresleri Bul → Yeni Liste → yapıştırma kutusu `value.length === 0`.
+- **Doğrulama:** `npm run typecheck` PASS · `npm test` 79/79 PASS · `npm run build` PASS · yukarıdaki gerçek tarayıcı/Electron testleri.
+
+
