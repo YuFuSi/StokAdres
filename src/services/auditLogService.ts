@@ -1,5 +1,6 @@
 import { supabase } from '../lib/supabase'
 import type { AuditAction, AuditEntityType, AuditLog } from '../types/auditLog'
+import { escapePostgrestOrPattern } from '../lib/queryEscape'
 
 type AuditRow = {
   id: string
@@ -34,7 +35,14 @@ export async function listAuditLogs(filter: AuditFilter = {}): Promise<AuditLog[
   if (filter.productId) query = query.eq('product_id', filter.productId)
   if (filter.from) query = query.gte('created_at', filter.from)
   if (filter.to) query = query.lt('created_at', filter.to)
-  if (filter.query) query = query.or(`stock_code.ilike.%${filter.query}%,stock_name.ilike.%${filter.query}%,description.ilike.%${filter.query}%`)
+  if (filter.query) {
+    // PostgREST or() filtresinde virgül ayırıcıdır; %, _ ise ilike jokerleridir.
+    // Kullanıcı sorgusundaki özel karakterlerin PostgREST sözdizimini bozmaması için kaçırılır.
+    const escaped = escapePostgrestOrPattern(filter.query)
+    if (escaped) {
+      query = query.or(`stock_code.ilike.%${escaped}%,stock_name.ilike.%${escaped}%,description.ilike.%${escaped}%`)
+    }
+  }
   const { data, error } = await query
   if (error) throw error
   return (data ?? []).map((row) => mapAudit(row as unknown as AuditRow))

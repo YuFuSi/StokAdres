@@ -33,16 +33,55 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const [theme, setTheme] = useState<Theme>(readStoredTheme)
 
   useEffect(() => {
-    const resolved = theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : theme
-    document.documentElement.dataset.theme = resolved
+    const mediaQuery = typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+      ? window.matchMedia('(prefers-color-scheme: dark)')
+      : null
+
+    const updateResolvedTheme = () => {
+      const isSystemDark = mediaQuery?.matches ?? false
+      const resolved = theme === 'system' ? (isSystemDark ? 'dark' : 'light') : theme
+      document.documentElement.dataset.theme = resolved
+      const metaThemeColor = document.querySelector('meta[name="theme-color"]')
+      if (metaThemeColor) {
+        metaThemeColor.setAttribute('content', resolved === 'dark' ? '#171a1a' : '#f5f7f8')
+      }
+    }
+
+    updateResolvedTheme()
+
     try {
       getLocalStorage()?.setItem(THEME_STORAGE_KEY, theme)
     } catch {
       // Tercih kalıcı olmasa da uygulama çalışmaya devam etmeli.
     }
+
+    // 'system' modundayken işletim sistemi açık/koyu mod değişimini canlı izle.
+    if (theme === 'system' && mediaQuery) {
+      const handleChange = () => {
+        updateResolvedTheme()
+      }
+      mediaQuery.addEventListener('change', handleChange)
+      return () => {
+        mediaQuery.removeEventListener('change', handleChange)
+      }
+    }
   }, [theme])
 
-  return <ThemeContext.Provider value={{ theme, setTheme, toggleTheme: () => setTheme((value) => value === 'dark' ? 'light' : 'dark') }}>{children}</ThemeContext.Provider>
+  // Üç durumlu döngü: light → dark → system → light.
+  // Ayarlar ekranındaki üç butonlu seçiciyle çakışmaz; kısayol veya hızlı geçişte tam döngü sağlar.
+  const toggleTheme = () => {
+    setTheme((current) => {
+      if (current === 'light') return 'dark'
+      if (current === 'dark') return 'system'
+      return 'light'
+    })
+  }
+
+  return (
+    <ThemeContext.Provider value={{ theme, setTheme, toggleTheme }}>
+      {children}
+    </ThemeContext.Provider>
+  )
 }
 
 export function useTheme() {

@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, shell } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, shell } from 'electron'
 import fs from 'node:fs/promises'
 import path from 'node:path'
 
@@ -11,12 +11,26 @@ const BACKUP_FOLDER_NAME = /^StokAdres_yedek_\d{4}-\d{2}-\d{2}_\d{4}$/
 const BACKUP_FILE_NAMES = new Set(['bilgi.txt', 'stoklar.csv', 'barkodlar.csv', 'adresler.csv'])
 
 const createWindow = (): void => {
+  // Açılışta beyaz flaşı önlemek için arka plan rengi:
+  // Renderer'ın `localStorage` verisi (stokadres-theme-v1) Chromium seviyesinde tutulur
+  // ve BrowserWindow ilk oluşturulduğu sırada renderer henüz başlatılmadığından Node.js
+  // ana sürecinden senkron olarak doğrudan okunamaz. Bu nedenle pencerenin başlangıç
+  // backgroundColor değeri, işletim sisteminin açık/koyu modunu temsil eden
+  // `nativeTheme.shouldUseDarkColors` API'sine göre belirlenir (açık: #f5f7f8, koyu: #171a1a).
+  // Kullanıcı sistem temasından bağımsız bir tercih yaptıysa (örneğin sistem açıkken uygulamada koyu tema),
+  // public/theme-init.js DOM parse edilir edilmez html dataset.theme'i ve
+  // arkaplanı koyu (--page) renge çeker. Aynı-köken dosya olarak yüklenir
+  // (inline DEĞİL) — üretim CSP'si script-src 'self' diyor, nonce/unsafe-inline
+  // yok; inline <script> sessizce engellenirdi.
+  const isDark = nativeTheme.shouldUseDarkColors
+  const initialBackgroundColor = isDark ? '#171a1a' : '#f5f7f8'
+
   const window = new BrowserWindow({
     width: 1200,
     height: 780,
     minWidth: 900,
     minHeight: 620,
-    backgroundColor: '#f5f7f8',
+    backgroundColor: initialBackgroundColor,
     // Paketlenmiş uygulamada pencere ikonu exe'den gelir (electron-builder
     // build/icon.ico'yu gömer). Geliştirmede exe yok, o yüzden ikon burada
     // veriliyor — yoksa `npm run dev` varsayılan Electron ikonuyla açılır.

@@ -5,6 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#f5f7f8" />
     <title>StokAdres</title>
+    <!-- Inline değil: üretim CSP'si script-src 'self' (nonce/unsafe-inline yok),
+         aynı-köken dosyadan yükleme serbest. Detay: public/theme-init.js -->
+    <script src="./theme-init.js"></script>
   </head>
   <body>
     <div id="root"></div>
